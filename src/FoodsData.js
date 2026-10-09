@@ -275,7 +275,7 @@ export const VIETNAMESE_FOODS = [
   },
   {
     id: 28,
-    name: "Đùi gà",
+    name: "Cánh gà",
     category: "Đạm",
     calories: 145,
     protein: 18.6,
@@ -285,7 +285,7 @@ export const VIETNAMESE_FOODS = [
   },
   {
     id: 29,
-    name: "Cánh gà",
+    name: "Đùi gà",
     category: "Đạm",
     calories: 169,
     protein: 18.4,
@@ -433,16 +433,7 @@ export const VIETNAMESE_FOODS = [
     fat: 13.9,
     image: "/image144.png",
   },
-  {
-    id: 44,
-    name: "Cá lóc",
-    category: "Đạm",
-    calories: 97,
-    protein: 18.2,
-    carbs: 0.0,
-    fat: 2.7,
-    image: "/image145.png",
-  },
+
   {
     id: 45,
     name: "Cá rô phi",
@@ -451,7 +442,7 @@ export const VIETNAMESE_FOODS = [
     protein: 20.1,
     carbs: 0.0,
     fat: 1.7,
-    image: "/image146.png",
+    image: "/image145.png",
   },
   {
     id: 46,
@@ -461,7 +452,7 @@ export const VIETNAMESE_FOODS = [
     protein: 12.8,
     carbs: 3.6,
     fat: 1.2,
-    image: "/image147.png",
+    image: "/image146.png",
   },
   {
     id: 47,
@@ -471,7 +462,7 @@ export const VIETNAMESE_FOODS = [
     protein: 13.0,
     carbs: 3.0,
     fat: 1.8,
-    image: "/image148.png",
+    image: "/image147.png",
   },
   {
     id: 48,
@@ -481,7 +472,7 @@ export const VIETNAMESE_FOODS = [
     protein: 12.6,
     carbs: 0.7,
     fat: 10.0,
-    image: "/image149.png",
+    image: "/image148.png",
   },
   {
     id: 49,
@@ -491,7 +482,7 @@ export const VIETNAMESE_FOODS = [
     protein: 13.0,
     carbs: 1.5,
     fat: 14.2,
-    image: "/image150.png",
+    image: "/image149.png",
   },
   {
     id: 50,
@@ -501,7 +492,7 @@ export const VIETNAMESE_FOODS = [
     protein: 8.0,
     carbs: 1.9,
     fat: 4.2,
-    image: "/image151.png",
+    image: "/image150.png",
   },
   {
     id: 51,
@@ -511,7 +502,7 @@ export const VIETNAMESE_FOODS = [
     protein: 36.5,
     carbs: 30.2,
     fat: 19.9,
-    image: "/image152.png",
+    image: "/image151.png",
   },
   {
     id: 52,
@@ -795,18 +786,9 @@ export const VIETNAMESE_FOODS = [
     protein: 2.8,
     carbs: 6.6,
     fat: 0.4,
-    image: "/image1.png",
+    image: "/image2.png",
   },
-  {
-    id: 80,
-    name: "Bông cải trắng",
-    category: "Rau củ",
-    calories: 30,
-    protein: 1.9,
-    carbs: 5.0,
-    fat: 0.3,
-    image: "/image1.png",
-  },
+
   {
     id: 81,
     name: "Rau muống",

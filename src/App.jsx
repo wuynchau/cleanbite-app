@@ -290,7 +290,7 @@ export default function App() {
     setActiveTab("journal");
   };
 
-  // Gọi Google Gemini API 100% Thật
+  // Gọi Google Gemini API
   const handleApplyAiMenu = async () => {
     setIsAiLoading(true);
     setAiSuccessAlert(false);
@@ -303,10 +303,10 @@ Bạn là chuyên gia dinh dưỡng. Dựa vào thông tin sau:
 - Giới tính: ${profile?.gender === "male" ? "Nam" : "Nữ"}
 - Cân nặng: ${profile?.weight || 50}kg, Chiều cao: ${profile?.height || 160}cm
 - Tình trạng sức khỏe: ${profile?.medical || "Khỏe mạnh"}
-- Yêu cầu BẮT BUỘC (PHẢI CÓ các món/nguyên liệu này trong thực đơn): "${aiCustomNote || "Tự do sáng tạo món ăn Việt Nam"}"
+- Yêu cầu BẮT BUỘC: "${aiCustomNote || "Tự do sáng tạo món ăn Việt Nam"}"
 - Tổng Calo mục tiêu 1 ngày: ${targetCalories} kcal
 
-NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JSON đúng cấu trúc bên dưới, không dùng markdown, không giải thích:
+NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JSON đúng cấu trúc bên dưới, không dùng markdown:
 {
   "breakfast": [{"name": "Tên món", "weight": 200, "calories": 300, "protein": 15, "carbs": 35, "fat": 5}],
   "lunch": [{"name": "Tên món", "weight": 200, "calories": 400, "protein": 25, "carbs": 50, "fat": 10}],
@@ -821,64 +821,120 @@ NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JS
                 </button>
               </div>
 
+              {/* DANH SÁCH MÓN ĂN VÀ AFFILIATE */}
               <div className="space-y-2.5">
-                {filteredFoods.map((food) => (
-                  <div
-                    key={food.id}
-                    onClick={() => {
-                      setSelectedFoodForModal(food);
-                      setModalGrams(100);
-                    }}
-                    className="bg-[#18181b] hover:bg-[#202024] active:scale-[0.99] border border-neutral-800 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all shadow-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-[#27272a] overflow-hidden flex items-center justify-center border border-neutral-800 shrink-0">
-                        <img
-                          src={food.image}
-                          alt={food.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                            e.currentTarget.nextSibling.style.display = "flex";
-                          }}
-                        />
-                        <div
-                          style={{ display: "none" }}
-                          className="w-full h-full items-center justify-center text-xl"
-                        >
-                          {food.category === "Món ăn"
-                            ? "🍲"
-                            : food.category === "Đạm"
-                              ? "🍗"
-                              : food.category === "Tinh bột"
-                                ? "🍚"
-                                : food.category === "Rau củ"
-                                  ? "🥦"
-                                  : food.category === "Trái cây"
-                                    ? "🍎"
-                                    : "🧂"}
+                {filteredFoods.map((food) => {
+                  //  AFFILIATE  TỰ ĐỘNG TÌM KIẾM MÓN ĂN
+                  const searchKeyword = encodeURIComponent(food.name);
+                  let aff = null;
+
+                  if (food.category === "Món ăn") {
+                    aff = {
+                      url: `https://shopeefood.vn/ho-chi-minh/danh-sach-dia-diem-giao-tan-noi?q=${searchKeyword}`,
+                      label: "Giao ngay",
+
+                      color:
+                        "bg-orange-500 hover:bg-orange-600 shadow-orange-500/20",
+                    };
+                  } else if (
+                    food.category === "Tinh bột" ||
+                    food.category === "Gia vị"
+                  ) {
+                    aff = {
+                      url: `https://shopee.vn/search?keyword=${searchKeyword}`,
+
+                      icon: "🛒",
+                      color:
+                        "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20",
+                    };
+                  } else {
+                    // Đạm, Rau củ, Trái cây (Đồ tươi sống)
+                    aff = {
+                      url: `https://www.bachhoaxanh.com/tim-kiem?key=${searchKeyword}`,
+
+                      icon: "🛒",
+                      color:
+                        "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20",
+                    };
+                  }
+
+                  return (
+                    <div
+                      key={food.id}
+                      onClick={() => {
+                        setSelectedFoodForModal(food);
+                        setModalGrams(100);
+                      }}
+                      className="bg-[#18181b] hover:bg-[#202024] active:scale-[0.99] border border-neutral-800 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all shadow-sm"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-[#27272a] overflow-hidden flex items-center justify-center border border-neutral-800 shrink-0">
+                          <img
+                            src={food.image}
+                            alt={food.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                              e.currentTarget.nextSibling.style.display =
+                                "flex";
+                            }}
+                          />
+                          <div
+                            style={{ display: "none" }}
+                            className="w-full h-full items-center justify-center text-xl"
+                          >
+                            {food.category === "Món ăn"
+                              ? "🍲"
+                              : food.category === "Đạm"
+                                ? "🍗"
+                                : food.category === "Tinh bột"
+                                  ? "🍚"
+                                  : food.category === "Rau củ"
+                                    ? "🥦"
+                                    : food.category === "Trái cây"
+                                      ? "🍎"
+                                      : "🧂"}
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-neutral-100">
+                            {food.name}
+                          </h4>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">
+                            {food.protein}g đạm • {food.carbs}g carbs •{" "}
+                            {food.fat}g béo / 100g
+                          </p>
                         </div>
                       </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-neutral-100">
-                          {food.name}
-                        </h4>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">
-                          {food.protein}g đạm • {food.carbs}g carbs • {food.fat}
-                          g béo / 100g
-                        </p>
+
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="text-right">
+                          <div className="text-sm font-extrabold text-emerald-400">
+                            {food.calories}
+                          </div>
+                          <div className="text-[10px] text-neutral-500">
+                            kcal/100g
+                          </div>
+                        </div>
+
+                        {/* Nút Affiliate Động */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(aff.url, "_blank");
+                          }}
+                          className={`flex items-center gap-1 text-white text-[10px] px-2.5 py-1.5 rounded-lg transition-colors active:scale-95 shadow-md ${aff.color}`}
+                          title={`Tìm ${food.name} trên đối tác`}
+                        >
+                          <span className="text-xs">{aff.icon}</span>
+                          <span className="font-semibold tracking-wide">
+                            {aff.label}
+                          </span>
+                        </button>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-extrabold text-emerald-400">
-                        {food.calories}
-                      </div>
-                      <div className="text-[10px] text-neutral-500">
-                        kcal/100g
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1184,42 +1240,6 @@ NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JS
           )}
         </main>
 
-        {/* ================= MÔ HÌNH 2: BANNER QUẢNG CÁO TỰ NHIÊN (NATIVE AD) ================= */}
-        {!isPremium && (
-          <div className="fixed bottom-16 w-full max-w-[430px] px-3 z-30">
-            <div className="bg-[#18181b]/95 backdrop-blur-md border border-neutral-700/80 rounded-2xl p-2.5 flex items-center justify-between shadow-2xl">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-base shrink-0">
-                  🥗
-                </div>
-                <div className="pr-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1 py-0.2 rounded font-bold">
-                      QC
-                    </span>
-                    <h5 className="text-xs font-bold text-white truncate max-w-[190px]">
-                      Bếp Eat Clean Healthy Meal
-                    </h5>
-                  </div>
-                  <p className="text-[10px] text-neutral-400 truncate max-w-[210px]">
-                    Giảm 25% cho thành viên CleanBite • ★ 4.9
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() =>
-                  alert(
-                    "Mô phỏng Doanh thu Quảng cáo (Google Ads / Brand Sponsorship):\nNgười dùng bấm xem đối tác, CleanBite ghi nhận doanh thu theo lượt tương tác (CPC).",
-                  )
-                }
-                className="bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all active:scale-95 shadow-md shadow-emerald-500/20"
-              >
-                Xem
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ================= MODAL LỊCH POPUP ================= */}
         {showCalendarModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
@@ -1405,13 +1425,12 @@ NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JS
               <button
                 onClick={() =>
                   alert(
-                    `Mô phỏng Tiếp thị liên kết (Affiliate Marketing):\n• Món: ${selectedFoodForModal.name}\n• Điều hướng sang GrabFood / ShopeeFood với mã giới thiệu CleanBite.\n• CleanBite nhận hoa hồng 8% - 10% trên đơn đặt thành công.`,
+                    `Mô phỏng Tiếp thị liên kết (Affiliate Marketing):\n• Món: ${selectedFoodForModal.name}\n• Điều hướng sang sàn đối tác với mã giới thiệu CleanBite.\n• CleanBite nhận hoa hồng 8% - 10% trên đơn đặt thành công.`,
                   )
                 }
                 className="w-full py-2.5 bg-[#27272a] hover:bg-[#323238] border border-neutral-700 text-neutral-300 font-semibold rounded-2xl text-[11px] flex items-center justify-center gap-1.5 transition-colors"
               >
-                <span>🛵</span> Không tiện nấu? Đặt món này qua ShopeeFood /
-                GrabFood
+                <span>🚀</span> Không tiện nấu? Đặt món này qua nền tảng đối tác
               </button>
             </div>
           </div>
