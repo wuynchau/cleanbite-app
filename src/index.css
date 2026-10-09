@@ -2,49 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Áp dụng font chữ chuẩn app iOS/Android */
-body {
+/* 1. Phông chữ chuẩn ứng dụng iOS / Android */
+body,
+html {
   font-family:
-    "Be Vietnam Pro",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter",
+    "Be Vietnam Pro", sans-serif !important;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.015em; /* Thu hẹp khoảng cách chữ tạo cảm giác gọn gàng */
+  letter-spacing: -0.01em;
 }
 
-/* Chuẩn hóa các cấp tiêu đề giống ảnh mẫu */
+/* 2. Tiết chế lại các tiêu đề lớn: Gọn gàng, thanh thoát (giống chữ "Hôm nay") */
 h1,
-.app-title {
-  font-size: 1.65rem !important; /* Cỡ chữ to đậm như chữ "Hôm nay" */
+.text-3xl,
+.text-2xl {
+  font-size: 1.45rem !important; /* ~23px, không bị quá to lấn át */
   font-weight: 700 !important;
-  letter-spacing: -0.025em !important;
+  letter-spacing: -0.02em !important;
 }
 
-h2,
-.section-title {
-  font-size: 1.15rem !important; /* Cỡ chữ phần "Chỉ số khối cơ thể (BMI)" */
+/* 3. Nâng cấp các dòng chữ phụ li ti (text-xs, text-[10px]) lên mức dễ đọc */
+.text-xs,
+.text-\[10px\],
+.text-\[11px\],
+span.text-xs {
+  font-size: 0.82rem !important; /* ~13px - mức chuẩn đọc tốt trên điện thoại */
+  font-weight: 500 !important; /* Nét chữ dày dặn hơn, không bị mờ nhạt */
+  line-height: 1.25rem !important;
+}
+
+/* 4. Các nhãn phụ (Carbs, Chất đạm, Đã nạp, Cần nạp, gram món ăn) */
+.text-gray-400,
+.text-gray-500,
+.text-neutral-400,
+.text-slate-400 {
+  color: #64748b !important; /* Tăng độ tương phản, chống chìm màu */
+  font-size: 0.82rem !important;
+  font-weight: 500 !important;
+}
+
+/* 5. Cụm hiển thị số liệu (Calo, Số gram, Số ml nước) rõ nét */
+.font-semibold,
+.font-bold {
+  letter-spacing: -0.01em;
+}
+
+/* 6. Chỉnh riêng danh sách món ăn: Tên món rõ, dòng gram & calo phụ không bị bé */
+.food-item-title,
+p.font-medium {
+  font-size: 0.95rem !important;
   font-weight: 600 !important;
 }
 
-/* Các số liệu trung tâm (Calo, BMI) hiển thị to rõ */
-.metric-value {
-  font-size: 2rem !important; /* Cỡ to như số 1236, 18.6 */
-  font-weight: 800 !important;
-  letter-spacing: -0.03em !important;
+p.text-xs,
+span.text-xs {
+  font-size: 0.82rem !important;
 }
 
-/* Nhãn phụ (đã nạp, cần nạp, carbs, đạm, béo) thanh mảnh, dễ đọc */
-.metric-label {
-  font-size: 0.8rem !important;
-  font-weight: 500 !important;
-  color: #9ca3af !important; /* Màu xám trung tính dịu mắt */
-}
-
-/* Bo tròn góc các khung thẻ cho mềm mại */
-.rounded-card {
-  border-radius: 1.25rem !important; /* Bo góc 20px chuẩn phong cách hiện đại */
+/* 7. Thanh điều hướng đáy (Bottom Bar): Icon và chữ cân đối, không lộn xộn */
+nav span {
+  font-size: 0.75rem !important; /* 12px vừa vặn cho thanh tab */
+  font-weight: 600 !important;
+  margin-top: 2px;
 }

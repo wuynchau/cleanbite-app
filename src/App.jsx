@@ -1,1691 +1,1915 @@
 import React, { useState, useMemo } from "react";
-import { calculateBMI, calculateDiet, calculateGrams } from "./Calculator";
-import {
-  VIETNAM_FOOD_DATABASE,
-  CATEGORIES,
-  DEFAULT_CONDITIONS,
-} from "./FoodsData";
+import * as FoodsModule from "./FoodsData";
 
-// ===================== LOGO VECTOR CLEANBITE THEO BẢN THIẾT KẾ =====================
-function CleanBiteLogo({ className = "w-8 h-8" }) {
-  return (
-    <svg
-      viewBox="0 0 200 200"
-      className={className}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <defs>
-        <linearGradient id="cbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#34d399" />
-          <stop offset="50%" stopColor="#10b981" />
-          <stop offset="100%" stopColor="#059669" />
-        </linearGradient>
-      </defs>
-      <rect width="200" height="200" rx="55" fill="url(#cbGrad)" />
-      {/* Vành chiếc lá uốn cong tạo chữ C */}
-      <path
-        d="M 145 60 C 120 30 70 35 48 65 C 24 100 35 145 75 165 C 115 180 150 155 160 125 C 145 142 112 152 82 140 C 56 128 48 95 65 72 C 82 50 120 48 140 68 Z"
-        fill="white"
-      />
-      {/* Đầu lá trên */}
-      <path
-        d="M 112 40 C 135 40 160 55 160 80 C 135 80 115 65 112 40 Z"
-        fill="white"
-      />
-      {/* Hình chiếc nĩa và thìa ôm trong lòng */}
-      <path
-        d="M 85 92 L 95 92 L 95 106 C 95 116 102 122 112 122 L 118 122 C 128 122 136 114 136 104 C 136 96 128 88 118 90 C 112 91 106 97 106 104 L 106 100 C 106 94 100 88 94 88 L 85 88 Z"
-        fill="#10b981"
-      />
-      <rect x="88" y="78" width="3" height="12" rx="1.5" fill="#10b981" />
-      <rect x="93" y="78" width="3" height="12" rx="1.5" fill="#10b981" />
-      <rect x="98" y="78" width="3" height="12" rx="1.5" fill="#10b981" />
-    </svg>
-  );
-}
+// Danh mục thực phẩm mặc định dự phòng
+const FALLBACK_FOODS = [
+  {
+    id: 1,
+    name: "Phở bò tái",
+    category: "Món ăn",
+    calories: 95,
+    protein: 8.0,
+    carbs: 9.0,
+    fat: 3.0,
+    image: "/image54.png",
+  },
+  {
+    id: 2,
+    name: "Bún bò Huế",
+    category: "Món ăn",
+    calories: 158,
+    protein: 8.0,
+    carbs: 18.0,
+    fat: 6.0,
+    image: "/image52.png",
+  },
+  {
+    id: 3,
+    name: "Cơm tấm sườn",
+    category: "Món ăn",
+    calories: 296,
+    protein: 12.0,
+    carbs: 35.0,
+    fat: 12.0,
+    image: "/image56.png",
+  },
+  {
+    id: 4,
+    name: "Bánh mì thịt",
+    category: "Món ăn",
+    calories: 291,
+    protein: 12.0,
+    carbs: 36.0,
+    fat: 11.0,
+    image: "/image69.png",
+  },
+  {
+    id: 5,
+    name: "Ức gà",
+    category: "Đạm",
+    calories: 107,
+    protein: 22.5,
+    carbs: 0.0,
+    fat: 1.9,
+    image: "/image128.png",
+  },
+  {
+    id: 6,
+    name: "Gạo lứt",
+    category: "Tinh bột",
+    calories: 363,
+    protein: 7.5,
+    carbs: 77.2,
+    fat: 2.7,
+    image: "/image103.png",
+  },
+  {
+    id: 7,
+    name: "Bông cải xanh",
+    category: "Rau củ",
+    calories: 41,
+    protein: 2.8,
+    carbs: 6.6,
+    fat: 0.4,
+    image: "/image1.png",
+  },
+  {
+    id: 8,
+    name: "Chuối",
+    category: "Trái cây",
+    calories: 98,
+    protein: 1.1,
+    carbs: 22.8,
+    fat: 0.3,
+    image: "/image22.png",
+  },
+  {
+    id: 9,
+    name: "Nước mắm",
+    category: "Gia vị",
+    calories: 0,
+    protein: 0.0,
+    carbs: 0.0,
+    fat: 0.0,
+    image: "/image80.png",
+  },
+];
 
 export default function App() {
-  // Mặc định là Chế độ sáng (Light Mode)
-  const [darkMode, setDarkMode] = useState(false);
-  const [activeTab, setActiveTab] = useState("journal");
-  const [showSetupModal, setShowSetupModal] = useState(false);
+  const foodDatabase = useMemo(() => {
+    return (
+      FoodsModule.VIETNAMESE_FOODS ||
+      FoodsModule.FOODS_DATA ||
+      FoodsModule.default ||
+      FALLBACK_FOODS
+    );
+  }, []);
 
-  // Bộ chọn ngày
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 8, 8)); // 8 thg 9
-
-  // Hồ sơ người dùng
-  const [profile, setProfile] = useState({
-    name: "Bảo Châu",
-    gender: "Nữ",
-    weight: 43,
-    height: 152,
-    age: 21,
-    activity: 1.2,
-    conditions: ["Đau dạ dày"],
-    carbsRatio: 35,
-    proteinRatio: 35,
-    fatRatio: 30,
-    waterReminder: true,
+  // 1. Hồ sơ cá nhân (Onboarding)
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem("cleanbite_profile");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return null;
   });
 
-  // Tự nhập bệnh lý khác
-  const [customConditionInput, setCustomConditionInput] = useState("");
-
-  // Tính toán qua Calculator.js
-  const bmiInfo = calculateBMI(profile.weight, profile.height);
-  const dietInfo = calculateDiet(
-    profile.gender,
-    profile.weight,
-    profile.height,
-    profile.age,
-    profile.activity,
-  );
-  const targetCalories = 1235;
-
-  // Macros mục tiêu (gram)
-  const targetCarbsGrams = Math.round(
-    (targetCalories * (profile.carbsRatio / 100)) / 4,
-  );
-  const targetProteinGrams = Math.round(
-    (targetCalories * (profile.proteinRatio / 100)) / 4,
-  );
-  const targetFatGrams = Math.round(
-    (targetCalories * (profile.fatRatio / 100)) / 9,
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => !localStorage.getItem("cleanbite_profile"),
   );
 
-  // 8 ly nước (mỗi ly 250ml)
-  const [waterCount, setWaterCount] = useState(3); // 750ml
+  const [medicalOption, setMedicalOption] = useState(() => {
+    const saved = localStorage.getItem("cleanbite_profile");
+    if (saved) {
+      try {
+        const p = JSON.parse(saved);
+        const defaults = [
+          "Không có",
+          "Đau dạ dày",
+          "Tiểu đường",
+          "Huyết áp",
+          "Gout",
+        ];
+        if (p?.medical && !defaults.includes(p.medical)) return "Khác";
+        return p?.medical || "Đau dạ dày";
+      } catch (e) {}
+    }
+    return "Đau dạ dày";
+  });
 
-  // Nhật ký 4 bữa ăn
-  const [mealLogs, setMealLogs] = useState({
+  const [activeTab, setActiveTab] = useState("journal");
+
+  // Trạng thái gói trả phí & Popup
+  const [isPremium, setIsPremium] = useState(() => {
+    return localStorage.getItem("cleanbite_is_premium") === "true";
+  });
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [showExpertModal, setShowExpertModal] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+
+  // 2. Lịch và Ngày tương tác
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+
+  // 3. Quản lý bữa ăn & Nước uống
+  const [meals, setMeals] = useState({
     breakfast: [
       {
-        id: "b1",
-        name: "Yến mạch cán dẹt nguyên chất",
-        grams: 60,
-        calories: 233,
+        id: 101,
+        name: "Yến mạch",
+        weight: 60,
+        calories: 237,
+        protein: 10,
         carbs: 40,
-        protein: 8,
         fat: 4,
-        icon: "🥣",
       },
       {
-        id: "b2",
-        name: "Trứng gà luộc (1 quả)",
-        grams: 55,
-        calories: 78,
-        carbs: 1,
+        id: 102,
+        name: "Trứng gà",
+        weight: 55,
+        calories: 79,
         protein: 7,
+        carbs: 0,
         fat: 5,
-        icon: "🥚",
       },
     ],
     lunch: [
       {
-        id: "l1",
-        name: "Cơm gạo lứt huyết rồng",
-        grams: 150,
-        calories: 168,
-        carbs: 35,
+        id: 103,
+        name: "Gạo lứt",
+        weight: 150,
+        calories: 180,
         protein: 4,
+        carbs: 38,
         fat: 1,
-        icon: "🍚",
       },
       {
-        id: "l2",
-        name: "Ức gà luộc",
-        grams: 120,
-        calories: 198,
+        id: 104,
+        name: "Ức gà",
+        weight: 120,
+        calories: 128,
+        protein: 27,
         carbs: 0,
-        protein: 37,
-        fat: 4,
-        icon: "🍗",
+        fat: 2,
       },
       {
-        id: "l3",
-        name: "Bông cải xanh (Súp lơ) luộc",
-        grams: 100,
-        calories: 34,
-        carbs: 7,
+        id: 105,
+        name: "Bông cải xanh",
+        weight: 100,
+        calories: 41,
         protein: 3,
+        carbs: 7,
         fat: 0,
-        icon: "🥦",
       },
     ],
     dinner: [],
     snack: [],
   });
 
-  // Modal chọn gram
-  const [selectedFoodForPortion, setSelectedFoodForPortion] = useState(null);
-  const [selectedMealSlot, setSelectedMealSlot] = useState("breakfast");
-  const [portionGrams, setPortionGrams] = useState(100);
+  const [waterGlasses, setWaterGlasses] = useState(3);
 
-  // Tìm kiếm món ăn
-  const [foodSearchQuery, setFoodSearchQuery] = useState("");
-  const [activeFoodCategory, setActiveFoodCategory] = useState("Tất cả");
+  // 4. Modal chọn gram
+  const [selectedFoodForModal, setSelectedFoodForModal] = useState(null);
+  const [modalGrams, setModalGrams] = useState(100);
+  const [modalMealType, setModalMealType] = useState("breakfast");
 
-  // AI Planner
-  const [aiDislikesInput, setAiDislikesInput] = useState(
-    "không cay không nóng kh ăn rau",
-  );
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [generatedPlan, setGeneratedPlan] = useState({
-    title: "Thực đơn chuyên sâu cho người Đau dạ dày (1235 kcal)",
-    note: "Ưu tiên các món mềm, luộc/hấp thanh đạm, tránh hoàn toàn gia vị cay nóng, đồ chua gắt gây kích ứng dạ dày.",
-    meals: [
-      {
-        slot: "Bữa Sáng (07:00)",
-        name: "Cháo yến mạch ức gà xé phay mềm",
-        grams: "180g cháo + 70g ức gà",
-        calories: 290,
-        protein: 26,
-      },
-      {
-        slot: "Bữa Trưa (11:30)",
-        name: "Cơm gạo lứt mềm + Cá hồi áp chảo + Bí đỏ hấp",
-        grams: "130g cơm + 120g cá hồi + 100g bí",
-        calories: 460,
-        protein: 34,
-      },
-      {
-        slot: "Bữa Tối (18:30)",
-        name: "Đậu hũ non sốt nấm hương + Canh rong biển",
-        grams: "150g đậu hũ + 80g nạc heo",
-        calories: 320,
-        protein: 28,
-      },
-      {
-        slot: "Bữa Phụ (15:00)",
-        name: "1 Quả chuối tiêu chín + 1 cốc sữa chua ấm",
-        grams: "1 quả chuối + 100g sữa chua",
-        calories: 165,
-        protein: 5,
-      },
-    ],
+  // 5. TÌM KIẾM & THÊM MÓN THỦ CÔNG
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("Tất cả");
+  const [showCustomFoodModal, setShowCustomFoodModal] = useState(false);
+  const [customFoodForm, setCustomFoodForm] = useState({
+    name: "",
+    weight: 100,
+    calories: 250,
+    mealType: "breakfast",
   });
 
-  // ===================== TỔNG HỢP CALO & MACROS =====================
-  const allMealsList = useMemo(() => {
-    return [
-      ...mealLogs.breakfast,
-      ...mealLogs.lunch,
-      ...mealLogs.dinner,
-      ...mealLogs.snack,
-    ];
-  }, [mealLogs]);
+  // 6. Tab Thực đơn AI
+  const [aiCustomNote, setAiCustomNote] = useState("");
+  const [aiSuccessAlert, setAiSuccessAlert] = useState(false);
+  const [generatedAiMenu, setGeneratedAiMenu] = useState(null);
 
-  const totalConsumedCalories = allMealsList.reduce(
-    (sum, f) => sum + f.calories,
-    0,
-  );
-  const totalConsumedCarbs = allMealsList.reduce(
-    (sum, f) => sum + (f.carbs || 0),
-    0,
-  );
-  const totalConsumedProtein = allMealsList.reduce(
-    (sum, f) => sum + (f.protein || 0),
-    0,
-  );
-  const totalConsumedFat = allMealsList.reduce(
-    (sum, f) => sum + (f.fat || 0),
-    0,
-  );
+  // Tính toán chỉ số dinh dưỡng
+  const targetCalories = profile ? profile.targetCalo : 1235;
+  const targetWater = profile ? profile.waterTarget : 2000;
+  const targetCarbs = Math.round((targetCalories * 0.5) / 4);
+  const targetProtein = Math.round((targetCalories * 0.25) / 4);
+  const targetFat = Math.round((targetCalories * 0.25) / 9);
 
-  const remainingCalories = Math.max(0, targetCalories - totalConsumedCalories);
-  const percentAchieved = Math.min(
-    100,
-    Math.round((totalConsumedCalories / targetCalories) * 100),
-  );
+  const consumed = useMemo(() => {
+    let cal = 0,
+      pro = 0,
+      carb = 0,
+      fat = 0;
+    Object.values(meals).forEach((mealList) => {
+      mealList.forEach((item) => {
+        cal += item.calories;
+        pro += item.protein;
+        carb += item.carbs;
+        fat += item.fat;
+      });
+    });
+    return {
+      calories: Math.round(cal),
+      protein: Math.round(pro),
+      carbs: Math.round(carb),
+      fat: Math.round(fat),
+    };
+  }, [meals]);
 
-  // Bộ chọn ngày
-  const changeDate = (days) => {
+  const remainingCalories = Math.max(0, targetCalories - consumed.calories);
+
+  const handleRemoveFood = (mealType, itemId) => {
+    setMeals((prev) => ({
+      ...prev,
+      [mealType]: prev[mealType].filter((item) => item.id !== itemId),
+    }));
+  };
+
+  const handleConfirmAddFood = () => {
+    if (!selectedFoodForModal) return;
+    const ratio = modalGrams / 100;
+    const newItem = {
+      id: Date.now(),
+      name: selectedFoodForModal.name,
+      weight: modalGrams,
+      calories: Math.round(selectedFoodForModal.calories * ratio),
+      protein: Math.round(selectedFoodForModal.protein * ratio),
+      carbs: Math.round(selectedFoodForModal.carbs * ratio),
+      fat: Math.round(selectedFoodForModal.fat * ratio),
+    };
+    setMeals((prev) => ({
+      ...prev,
+      [modalMealType]: [...prev[modalMealType], newItem],
+    }));
+    setSelectedFoodForModal(null);
+    setModalGrams(100);
+    setActiveTab("journal");
+  };
+
+  // Gọi Google Gemini API 100% Thật
+  const handleApplyAiMenu = async () => {
+    setIsAiLoading(true);
+    setAiSuccessAlert(false);
+    setGeneratedAiMenu(null);
+
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    const promptText = `
+Bạn là chuyên gia dinh dưỡng. Dựa vào thông tin sau:
+- Giới tính: ${profile?.gender === "male" ? "Nam" : "Nữ"}
+- Cân nặng: ${profile?.weight || 50}kg, Chiều cao: ${profile?.height || 160}cm
+- Tình trạng sức khỏe: ${profile?.medical || "Khỏe mạnh"}
+- Yêu cầu BẮT BUỘC (PHẢI CÓ các món/nguyên liệu này trong thực đơn): "${aiCustomNote || "Tự do sáng tạo món ăn Việt Nam"}"
+- Tổng Calo mục tiêu 1 ngày: ${targetCalories} kcal
+
+NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JSON đúng cấu trúc bên dưới, không dùng markdown, không giải thích:
+{
+  "breakfast": [{"name": "Tên món", "weight": 200, "calories": 300, "protein": 15, "carbs": 35, "fat": 5}],
+  "lunch": [{"name": "Tên món", "weight": 200, "calories": 400, "protein": 25, "carbs": 50, "fat": 10}],
+  "dinner": [{"name": "Tên món", "weight": 200, "calories": 300, "protein": 20, "carbs": 35, "fat": 7}],
+  "snack": [{"name": "Tên món", "weight": 100, "calories": 100, "protein": 4, "carbs": 15, "fat": 2}]
+}
+    `.trim();
+
+    try {
+      if (!apiKey)
+        throw new Error("Chưa cấu hình VITE_GEMINI_API_KEY trong file .env");
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: {
+              temperature: 0.7,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(
+          errData.error?.message || "Máy chủ AI đang bận hoặc quá tải",
+        );
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawText) throw new Error("AI trả về phản hồi rỗng");
+
+      const generatedMeals = JSON.parse(rawText);
+
+      const processMeals = (mealArray) =>
+        (mealArray || []).map((item) => ({
+          ...item,
+          id: Date.now() + Math.random(),
+        }));
+
+      setGeneratedAiMenu({
+        breakfast: processMeals(generatedMeals.breakfast),
+        lunch: processMeals(generatedMeals.lunch),
+        dinner: processMeals(generatedMeals.dinner),
+        snack: processMeals(generatedMeals.snack),
+      });
+    } catch (err) {
+      console.warn("Lỗi API:", err);
+      alert(
+        `Không thể tạo thực đơn lúc này:\n\n${err.message}\n\nVui lòng thử lại!`,
+      );
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const filteredFoods = useMemo(() => {
+    return foodDatabase.filter((food) => {
+      const matchQuery = food.name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchCat =
+        selectedCategory === "Tất cả" || food.category === selectedCategory;
+      return matchQuery && matchCat;
+    });
+  }, [foodDatabase, searchQuery, selectedCategory]);
+
+  const formatDateDisplay = (date) => {
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    const day = date.getDate();
+    const month = date.getMonth() + 1;
+    return isToday
+      ? `Hôm nay, ${day} thg ${month}`
+      : `Ngày ${day} thg ${month}`;
+  };
+
+  const changeDay = (offset) => {
     const next = new Date(currentDate);
-    next.setDate(next.getDate() + days);
+    next.setDate(next.getDate() + offset);
     setCurrentDate(next);
   };
-  const formattedDateString = `Hôm nay, ${currentDate.getDate()} thg ${currentDate.getMonth() + 1}`;
 
-  // Thêm món vào bữa ăn
-  const handleConfirmAddFood = () => {
-    if (!selectedFoodForPortion || portionGrams <= 0) return;
-    const factor = portionGrams / 100;
-    const calculatedCal = calculateGrams(
-      selectedFoodForPortion.calories,
-      Number(portionGrams),
-    );
-
-    const newFoodItem = {
-      id: `${Date.now()}_${Math.random()}`,
-      name: selectedFoodForPortion.name,
-      grams: Number(portionGrams),
-      calories: calculatedCal,
-      carbs: Math.round(selectedFoodForPortion.carbs * factor),
-      protein: Math.round(selectedFoodForPortion.protein * factor),
-      fat: Math.round(selectedFoodForPortion.fat * factor),
-      icon: selectedFoodForPortion.icon,
-    };
-
-    setMealLogs((prev) => ({
-      ...prev,
-      [selectedMealSlot]: [...prev[selectedMealSlot], newFoodItem],
-    }));
-
-    setSelectedFoodForPortion(null);
-    setPortionGrams(100);
-    setActiveTab("journal");
-  };
-
-  // Xóa món
-  const handleDeleteFood = (slot, id) => {
-    setMealLogs((prev) => ({
-      ...prev,
-      [slot]: prev[slot].filter((item) => item.id !== id),
-    }));
-  };
-
-  // Nhập cả thực đơn AI vào nhật ký
-  const handleImportAiPlanToDiary = () => {
-    setMealLogs({
-      breakfast: [
-        {
-          id: Date.now() + 1,
-          name: "Cháo yến mạch ức gà xé phay mềm",
-          grams: 250,
-          calories: 290,
-          carbs: 36,
-          protein: 26,
-          fat: 4,
-          icon: "🥣",
-        },
-      ],
-      lunch: [
-        {
-          id: Date.now() + 2,
-          name: "Cơm gạo lứt mềm + Cá hồi áp chảo",
-          grams: 250,
-          calories: 460,
-          carbs: 42,
-          protein: 34,
-          fat: 14,
-          icon: "🐟",
-        },
-      ],
-      dinner: [
-        {
-          id: Date.now() + 3,
-          name: "Đậu hũ non hấp sốt nấm hương",
-          grams: 230,
-          calories: 320,
-          carbs: 18,
-          protein: 28,
-          fat: 12,
-          icon: "🧊",
-        },
-      ],
-      snack: [
-        {
-          id: Date.now() + 4,
-          name: "Chuối tiêu chín + Sữa chua ấm",
-          grams: 200,
-          calories: 165,
-          carbs: 28,
-          protein: 5,
-          fat: 3,
-          icon: "🍌",
-        },
-      ],
-    });
-    setActiveTab("journal");
-  };
-
-  // Tạo thực đơn AI mới
-  const handleRegenerateAi = () => {
-    setIsAiLoading(true);
-    setTimeout(() => {
-      setIsAiLoading(false);
-      setGeneratedPlan({
-        title: `Thực đơn ${profile.conditions.join(", ")} - Dễ tiêu hoá`,
-        note: `Đã loại trừ yêu cầu: "${aiDislikesInput}". Chia làm 4 bữa thanh đạm dễ tiêu hóa, giữ trọn năng lượng 1235 kcal.`,
-        meals: [
-          {
-            slot: "Bữa Sáng (07:00)",
-            name: "Khoai lang vàng luộc mềm + 2 Trứng gà luộc",
-            grams: "150g khoai + 100g trứng",
-            calories: 275,
-            protein: 18,
-          },
-          {
-            slot: "Bữa Trưa (12:00)",
-            name: "Cơm trắng mềm + Tôm sú hấp sả + Canh bầu luộc",
-            grams: "130g cơm + 120g tôm + 1 bát canh",
-            calories: 440,
-            protein: 36,
-          },
-          {
-            slot: "Bữa Tối (18:30)",
-            name: "Thịt thăn heo áp chảo nhẹ + Mướp hương luộc",
-            grams: "120g thịt + 150g mướp",
-            calories: 350,
-            protein: 32,
-          },
-          {
-            slot: "Bữa Phụ (15:30)",
-            name: "1 Hộp sữa chua hạt ít đường",
-            grams: "1 hộp 120ml",
-            calories: 120,
-            protein: 6,
-          },
-        ],
-      });
-    }, 600);
-    chochau;
-  };
-
-  // Tự nhập thêm bệnh lý
-  const handleAddCustomCondition = () => {
-    if (!customConditionInput.trim()) return;
-    const val = customConditionInput.trim();
-    if (!profile.conditions.includes(val)) {
-      setProfile({
-        ...profile,
-        conditions: [...profile.conditions, val],
-      });
+  const calendarDays = useMemo(() => {
+    const year = calendarViewDate.getFullYear();
+    const month = calendarViewDate.getMonth();
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const startOffset = (firstDayIndex + 6) % 7;
+    const days = [];
+    for (let i = 0; i < startOffset; i++) {
+      days.push({ day: null });
     }
-    setCustomConditionInput("");
-  };
-
-  // Lọc danh sách món ăn
-  const filteredFoodList = VIETNAM_FOOD_DATABASE.filter((f) => {
-    const matchCat =
-      activeFoodCategory === "Tất cả" || f.category === activeFoodCategory;
-    const matchQuery = f.name
-      .toLowerCase()
-      .includes(foodSearchQuery.toLowerCase());
-    return matchCat && matchQuery;
-  });
+    for (let d = 1; d <= totalDays; d++) {
+      const thisDate = new Date(year, month, d);
+      const isSelected = thisDate.toDateString() === currentDate.toDateString();
+      const isToday = thisDate.toDateString() === new Date().toDateString();
+      days.push({ day: d, date: thisDate, isSelected, isToday });
+    }
+    return days;
+  }, [calendarViewDate, currentDate]);
 
   return (
-    <div
-      className={`min-h-screen flex justify-center font-sans transition-colors duration-200 ${
-        darkMode ? "bg-[#0a0a0a] text-white" : "bg-[#eef2f0] text-neutral-800"
-      }`}
-    >
-      {/* Khung màn hình điện thoại */}
-      <div
-        className={`w-full max-w-md min-h-screen flex flex-col justify-between relative shadow-2xl transition-colors ${
-          darkMode ? "bg-[#121212]" : "bg-white"
-        }`}
-      >
-        {/* VÙNG CUỘN NỘI DUNG */}
-        <div className="flex-1 pb-24 overflow-y-auto">
-          {/* ===================== TAB 1: NHẬT KÝ ===================== */}
-          {activeTab === "journal" && (
-            <div>
-              {/* Header xanh ngọc */}
-              <div className="bg-[#10b981] px-5 pt-6 pb-16 rounded-b-[38px] text-white shadow-sm">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2.5">
-                    <CleanBiteLogo className="w-9 h-9 shadow-md rounded-2xl" />
-                    <div>
-                      <h1 className="font-black text-xl tracking-tight text-white leading-none">
-                        CleanBite
-                      </h1>
-                      <span className="text-[9px] font-bold text-emerald-100 tracking-wider">
-                        EAT CLEANER • LIVE BRIGHTER
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowSetupModal(true)}
-                    className="text-[11px] font-bold bg-white/20 hover:bg-white/30 border border-white/30 px-3 py-1 rounded-full text-white backdrop-blur-xs transition-all"
-                  >
-                    {profile.conditions[0] || "Cá nhân"}
-                  </button>
-                </div>
-
-                {/* Bộ chọn ngày */}
-                <div className="flex justify-between items-center mt-6 text-sm font-semibold text-white">
-                  <button
-                    onClick={() => changeDate(-1)}
-                    className="text-white/80 hover:text-white px-3 py-1 rounded-lg text-lg active:scale-90"
-                  >
-                    ‹
-                  </button>
-                  <span className="tracking-wide text-white">
-                    {formattedDateString}
-                  </span>
-                  <button
-                    onClick={() => changeDate(1)}
-                    className="text-white/80 hover:text-white px-3 py-1 rounded-lg text-lg active:scale-90"
-                  >
-                    ›
-                  </button>
-                </div>
-              </div>
-
-              {/* Thẻ Vòng tròn Calo */}
-              <div
-                className={`-mt-10 mx-4 rounded-3xl p-5 shadow-xl border flex flex-col items-center transition-colors ${
-                  darkMode
-                    ? "bg-[#181c19] border-neutral-800 text-white"
-                    : "bg-white border-neutral-100 text-neutral-800"
-                }`}
-              >
-                <div className="relative w-44 h-44 flex items-center justify-center">
-                  <svg
-                    className="w-full h-full transform -rotate-90"
-                    viewBox="0 0 100 100"
-                  >
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke={darkMode ? "#242a26" : "#f1f5f9"}
-                      strokeWidth="8"
-                      fill="transparent"
-                    />
-                    <circle
-                      cx="50"
-                      cy="50"
-                      r="40"
-                      stroke="#10b981"
-                      strokeWidth="8"
-                      strokeDasharray="251.2"
-                      strokeDashoffset={251.2 - (251.2 * percentAchieved) / 100}
-                      strokeLinecap="round"
-                      fill="transparent"
-                      className="transition-all duration-700 ease-out"
-                    />
-                  </svg>
-                  <div className="absolute flex flex-col items-center">
-                    <span
-                      className={`text-4xl font-black tracking-tight ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {remainingCalories}
-                    </span>
-                    <span className="text-xs text-neutral-400 font-medium mt-0.5">
-                      kcal còn lại
-                    </span>
-                    <span className="mt-2 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-                      {percentAchieved}% mục tiêu
-                    </span>
-                  </div>
-                </div>
-
-                {/* Đã nạp & Mục tiêu */}
-                <div className="grid grid-cols-2 gap-3 w-full mt-6">
-                  <div
-                    className={`p-3 rounded-2xl flex items-center gap-3 ${darkMode ? "bg-[#202722]" : "bg-neutral-50 border border-neutral-100"}`}
-                  >
-                    <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center text-sm font-bold">
-                      🔥
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-neutral-400 block font-medium">
-                        Đã nạp
-                      </span>
-                      <span
-                        className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                      >
-                        {totalConsumedCalories}{" "}
-                        <span className="text-[10px] font-normal text-neutral-400">
-                          kcal
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className={`p-3 rounded-2xl flex items-center gap-3 ${darkMode ? "bg-[#202722]" : "bg-neutral-50 border border-neutral-100"}`}
-                  >
-                    <div className="w-9 h-9 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center text-sm font-bold">
-                      🎯
-                    </div>
-                    <div>
-                      <span className="text-[11px] text-neutral-400 block font-medium">
-                        Mục tiêu
-                      </span>
-                      <span
-                        className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                      >
-                        {targetCalories}{" "}
-                        <span className="text-[10px] font-normal text-neutral-400">
-                          kcal
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Thanh Macros */}
+    <div className="min-h-screen bg-[#09090b] text-white flex justify-center selection:bg-emerald-500 selection:text-white font-sans">
+      <div className="w-full max-w-[430px] min-h-screen bg-[#121214] border-x border-neutral-800 flex flex-col relative pb-28 shadow-2xl">
+        {/* ================= HEADER BRANDING ================= */}
+        <header className="bg-gradient-to-b from-[#0f5132] via-[#146c43] to-[#10b981] px-5 pt-7 pb-6 rounded-b-[2rem] shadow-lg sticky top-0 z-30">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-white/15 p-1 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-sm shrink-0">
+                <img
+                  src="/logo.png"
+                  alt="CleanBite Logo"
+                  className="w-full h-full object-contain rounded-xl"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.nextSibling.style.display = "block";
+                  }}
+                />
                 <div
-                  className={`w-full mt-6 space-y-3 pt-4 border-t text-xs ${darkMode ? "border-neutral-800" : "border-neutral-100"}`}
+                  style={{ display: "none" }}
+                  className="w-full h-full flex items-center justify-center"
                 >
-                  <div>
-                    <div className="flex justify-between font-semibold mb-1">
-                      <span
-                        className={
-                          darkMode ? "text-neutral-200" : "text-neutral-700"
-                        }
-                      >
-                        Carbs
-                      </span>
-                      <span className="text-neutral-400 font-medium">
-                        {totalConsumedCarbs}/{targetCarbsGrams}g
-                      </span>
-                    </div>
-                    <div
-                      className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? "bg-neutral-800" : "bg-neutral-100"}`}
-                    >
-                      <div
-                        className="bg-amber-500 h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, (totalConsumedCarbs / targetCarbsGrams) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between font-semibold mb-1">
-                      <span
-                        className={
-                          darkMode ? "text-neutral-200" : "text-neutral-700"
-                        }
-                      >
-                        Chất đạm
-                      </span>
-                      <span className="text-neutral-400 font-medium">
-                        {totalConsumedProtein}/{targetProteinGrams}g
-                      </span>
-                    </div>
-                    <div
-                      className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? "bg-neutral-800" : "bg-neutral-100"}`}
-                    >
-                      <div
-                        className="bg-[#10b981] h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, (totalConsumedProtein / targetProteinGrams) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between font-semibold mb-1">
-                      <span
-                        className={
-                          darkMode ? "text-neutral-200" : "text-neutral-700"
-                        }
-                      >
-                        Chất béo
-                      </span>
-                      <span className="text-neutral-400 font-medium">
-                        {totalConsumedFat}/{targetFatGrams}g
-                      </span>
-                    </div>
-                    <div
-                      className={`w-full h-2 rounded-full overflow-hidden ${darkMode ? "bg-neutral-800" : "bg-neutral-100"}`}
-                    >
-                      <div
-                        className="bg-blue-500 h-full rounded-full transition-all duration-300"
-                        style={{
-                          width: `${Math.min(100, (totalConsumedFat / targetFatGrams) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
+                  <span className="text-xl">🥗</span>
                 </div>
               </div>
-
-              {/* 8 Ly nước */}
-              <div className="px-4 mt-5">
-                <div
-                  className={`p-4 rounded-3xl border transition-colors ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200/80 shadow-xs"}`}
-                >
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-blue-500 text-lg">💧</span>
-                      <div>
-                        <h3
-                          className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                        >
-                          Uống nước
-                        </h3>
-                        <p className="text-[11px] text-neutral-400 font-medium">
-                          {waterCount * 250}/2000 ml · 250 ml mỗi ly
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setWaterCount(0)}
-                      className={`text-[11px] border px-2.5 py-1 rounded-lg transition-all ${
-                        darkMode
-                          ? "text-neutral-400 hover:text-white border-neutral-700/60"
-                          : "text-neutral-500 hover:text-neutral-800 border-neutral-200"
-                      }`}
-                    >
-                      ↺ Đặt lại
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-8 gap-1.5 pt-1">
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => {
-                      const isFilled = num <= waterCount;
-                      return (
-                        <button
-                          key={num}
-                          onClick={() =>
-                            setWaterCount(num === waterCount ? num - 1 : num)
-                          }
-                          className={`h-11 rounded-xl transition-all flex items-end justify-center pb-1 font-bold text-[10px] ${
-                            isFilled
-                              ? "bg-blue-500 text-white shadow-sm shadow-blue-500/40"
-                              : darkMode
-                                ? "bg-neutral-800/80 text-neutral-500 hover:bg-neutral-800"
-                                : "bg-neutral-100 text-neutral-400 hover:bg-neutral-200"
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* 4 Bữa ăn */}
-              <div className="px-4 mt-5 space-y-4">
-                {[
-                  {
-                    key: "breakfast",
-                    title: "Bữa Sáng",
-                    time: "06:00 – 09:00",
-                    items: mealLogs.breakfast,
-                  },
-                  {
-                    key: "lunch",
-                    title: "Bữa Trưa",
-                    time: "11:00 – 13:00",
-                    items: mealLogs.lunch,
-                  },
-                  {
-                    key: "dinner",
-                    title: "Bữa Tối",
-                    time: "18:00 – 20:00",
-                    items: mealLogs.dinner,
-                  },
-                  {
-                    key: "snack",
-                    title: "Bữa Phụ",
-                    time: "Ăn nhẹ lành mạnh",
-                    items: mealLogs.snack,
-                  },
-                ].map((meal) => {
-                  const mealTotalCal = meal.items.reduce(
-                    (s, i) => s + i.calories,
-                    0,
-                  );
-                  return (
-                    <div
-                      key={meal.key}
-                      className={`p-4 rounded-3xl border transition-colors ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200/80 shadow-xs"}`}
-                    >
-                      <div className="flex justify-between items-center mb-2.5">
-                        <div>
-                          <h4
-                            className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                          >
-                            {meal.title}
-                          </h4>
-                          <span className="text-[10px] text-neutral-400">
-                            {meal.time}
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
-                          {mealTotalCal} kcal
-                        </span>
-                      </div>
-
-                      {meal.items.length > 0 && (
-                        <div className="space-y-2 mb-3">
-                          {meal.items.map((food) => (
-                            <div
-                              key={food.id}
-                              className={`p-2.5 rounded-2xl flex items-center justify-between ${darkMode ? "bg-[#202722]" : "bg-neutral-50 border border-neutral-100"}`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-lg">
-                                  {food.icon || "🥗"}
-                                </div>
-                                <div>
-                                  <p
-                                    className={`text-xs font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                                  >
-                                    {food.name}
-                                  </p>
-                                  <p className="text-[10px] text-neutral-400">
-                                    {food.grams}g · {food.protein}g đạm ·{" "}
-                                    {food.carbs}g carbs
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2.5">
-                                <span className="text-xs font-bold text-emerald-500">
-                                  +{food.calories}
-                                </span>
-                                <button
-                                  onClick={() =>
-                                    handleDeleteFood(meal.key, food.id)
-                                  }
-                                  className="text-neutral-400 hover:text-red-500 text-sm px-1"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => {
-                          setSelectedMealSlot(meal.key);
-                          setActiveTab("food");
-                        }}
-                        className={`w-full py-2 rounded-2xl border border-dashed text-xs font-bold flex items-center justify-center gap-1 transition-all ${
-                          darkMode
-                            ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                            : "border-emerald-500/40 text-emerald-600 hover:bg-emerald-50/50"
-                        }`}
-                      >
-                        + Thêm món
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Nút tròn (+) */}
-              <div className="fixed bottom-20 right-6 max-w-md z-20">
-                <button
-                  onClick={() => setActiveTab("food")}
-                  className="w-12 h-12 rounded-full bg-[#10b981] hover:bg-emerald-600 text-white flex items-center justify-center text-2xl font-bold shadow-lg shadow-emerald-500/40 active:scale-95 transition-all"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ===================== TAB 2: THỰC PHẨM ===================== */}
-          {activeTab === "food" && (
-            <div>
-              <div className="bg-[#10b981] px-5 pt-7 pb-8 rounded-b-[36px] shadow-sm text-white">
-                <h1 className="text-2xl font-bold tracking-tight text-white">
-                  Thực phẩm
-                </h1>
-                <p className="text-white/95 text-xs mt-1">
-                  Chọn món và tính khẩu phần theo gram ·{" "}
-                  {selectedMealSlot === "breakfast"
-                    ? "Bữa Sáng"
-                    : selectedMealSlot === "lunch"
-                      ? "Bữa Trưa"
-                      : selectedMealSlot === "dinner"
-                        ? "Bữa Tối"
-                        : "Bữa Phụ"}
-                </p>
-
-                <div className="mt-4 relative">
-                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-400 text-xs">
-                    🔍
-                  </span>
-                  <input
-                    type="text"
-                    value={foodSearchQuery}
-                    onChange={(e) => setFoodSearchQuery(e.target.value)}
-                    placeholder="Tìm phở, ức gà, bánh mì, bún bò, rau..."
-                    className="w-full pl-9 pr-4 py-2.5 bg-white rounded-full text-xs text-neutral-900 placeholder-neutral-400 shadow-sm focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Nút lọc nhóm */}
-              <div className="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setActiveFoodCategory(cat)}
-                    className={`px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                      activeFoodCategory === cat
-                        ? "bg-[#10b981] text-white shadow-xs"
-                        : darkMode
-                          ? "bg-[#202722] text-neutral-300 border border-neutral-700/60"
-                          : "bg-white text-neutral-600 border border-neutral-200"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              {/* Danh sách món ăn */}
-              <div className="px-4 space-y-2.5 mt-1">
-                {filteredFoodList.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedFoodForPortion(item)}
-                    className={`p-3 rounded-2xl flex items-center justify-between border cursor-pointer transition-all active:scale-[0.99] ${
-                      darkMode
-                        ? "bg-[#181c19] border-neutral-800 hover:border-emerald-500/60"
-                        : "bg-white border-neutral-200/80 hover:border-emerald-400 shadow-xs"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-2xl shadow-inner">
-                        {item.icon}
-                      </div>
-                      <div>
-                        <h3
-                          className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                        >
-                          {item.name}
-                        </h3>
-                        <p className="text-[11px] text-neutral-400 mt-0.5">
-                          {item.protein}g đạm · {item.carbs}g carbs · {item.fat}
-                          g béo / 100g
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right pl-2">
-                      <span className="text-base font-extrabold text-[#10b981]">
-                        {item.calories}
-                      </span>
-                      <p className="text-[10px] text-neutral-400">kcal/100g</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ===================== TAB 3: THỰC ĐƠN AI ===================== */}
-          {activeTab === "ai" && (
-            <div>
-              <div className="bg-[#10b981] px-5 pt-7 pb-8 rounded-b-[36px] shadow-sm text-white">
-                <h1 className="text-2xl font-bold tracking-tight text-white">
-                  Thực đơn AI
-                </h1>
-                <p className="text-white/95 text-xs mt-1">
-                  Cá nhân hóa theo bệnh lý & nhu cầu calo của bạn
-                </p>
-              </div>
-
-              <div className="p-4 space-y-4">
-                {/* Thẻ bệnh lý */}
-                <div
-                  className={`p-4 rounded-3xl border ${darkMode ? "bg-[#18231c] border-emerald-500/30 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-900"}`}
-                >
-                  <div className="flex justify-between items-center mb-1.5">
-                    <span className="text-xs font-bold">
-                      Tình trạng ghi nhận:
-                    </span>
-                    <span className="text-[11px] font-bold bg-[#10b981] text-white px-2.5 py-0.5 rounded-full">
-                      {profile.conditions.join(", ")}
-                    </span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed opacity-90">
-                    AI tự động lọc bỏ các nguyên liệu có tính axit, cay nóng,
-                    dầu mỡ để bảo vệ sức khỏe và hỗ trợ thâm hụt mỡ lành mạnh.
-                  </p>
-                </div>
-
-                {/* Khung yêu cầu */}
-                <div
-                  className={`p-4 rounded-3xl border space-y-3 ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                >
-                  <label
-                    className={`text-xs font-bold block ${darkMode ? "text-white" : "text-neutral-700"}`}
-                  >
-                    Món không thích / Yêu cầu riêng:
-                  </label>
-                  <input
-                    type="text"
-                    value={aiDislikesInput}
-                    onChange={(e) => setAiDislikesInput(e.target.value)}
-                    placeholder="VD: không cay không nóng kh ăn rau..."
-                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs border focus:outline-none focus:border-emerald-500 ${
-                      darkMode
-                        ? "bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500"
-                        : "bg-white border-neutral-300 text-neutral-800"
-                    }`}
-                  />
-
-                  <button
-                    onClick={handleRegenerateAi}
-                    disabled={isAiLoading}
-                    className="w-full bg-[#10b981] hover:bg-emerald-600 text-white font-bold py-3 rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-500/20 active:scale-[0.99]"
-                  >
-                    {isAiLoading
-                      ? "AI đang phân tích và tính toán..."
-                      : "✨ AI tạo thực đơn mới"}
-                  </button>
-                </div>
-
-                {/* Kết quả AI */}
-                <div
-                  className={`p-4 rounded-3xl border space-y-3.5 ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                >
-                  <div
-                    className={`pb-3 border-b ${darkMode ? "border-neutral-800" : "border-neutral-100"}`}
-                  >
-                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-md uppercase">
-                      Khuyến nghị từ CleanBite AI
-                    </span>
-                    <h3
-                      className={`text-sm font-bold mt-2 ${darkMode ? "text-white" : "text-neutral-800"}`}
-                    >
-                      {generatedPlan.title}
-                    </h3>
-                    <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed">
-                      {generatedPlan.note}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    {generatedPlan.meals.map((meal, idx) => (
-                      <div
-                        key={idx}
-                        className={`p-3 rounded-2xl flex justify-between items-center ${darkMode ? "bg-[#202722]" : "bg-neutral-50 border border-neutral-100"}`}
-                      >
-                        <div>
-                          <span className="text-[11px] font-bold text-emerald-500 block">
-                            {meal.slot}
-                          </span>
-                          <p
-                            className={`text-xs font-bold mt-0.5 ${darkMode ? "text-white" : "text-neutral-800"}`}
-                          >
-                            {meal.name}
-                          </p>
-                          <span className="text-[10px] text-neutral-400 block mt-0.5">
-                            {meal.grams}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-extrabold text-[#10b981]">
-                            {meal.calories} kcal
-                          </span>
-                          <span className="text-[10px] text-neutral-400 block">
-                            {meal.protein}g đạm
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={handleImportAiPlanToDiary}
-                    className="w-full py-2.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 border border-emerald-500/30 text-xs font-bold transition-all"
-                  >
-                    📥 Thêm cả ngày vào Nhật ký
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ===================== TAB 4: CÁ NHÂN ===================== */}
-          {activeTab === "profile" && (
-            <div>
-              <div className="bg-[#10b981] px-5 pt-7 pb-8 rounded-b-[36px] shadow-sm text-white">
-                <h1 className="text-2xl font-bold tracking-tight text-white">
-                  Cá nhân
-                </h1>
-                <p className="text-white/95 text-xs mt-1">
-                  Chỉ số cơ thể, mục tiêu dinh dưỡng và cài đặt
-                </p>
-              </div>
-
-              <div className="p-4 space-y-4">
-                {/* 4 Thẻ chỉ số */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div
-                    className={`p-3.5 rounded-3xl border ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                  >
-                    <span className="text-[10px] text-neutral-400 font-bold block uppercase">
-                      BMI
-                    </span>
-                    <span
-                      className={`text-2xl font-black mt-1 block ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {bmiInfo.bmi}
-                    </span>
-                    <span className="text-[11px] font-bold text-emerald-500 mt-0.5 block">
-                      {bmiInfo.status}
-                    </span>
-                  </div>
-
-                  <div
-                    className={`p-3.5 rounded-3xl border ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                  >
-                    <span className="text-[10px] text-neutral-400 font-bold block uppercase">
-                      BMR
-                    </span>
-                    <span
-                      className={`text-2xl font-black mt-1 block ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {dietInfo.bmr}
-                    </span>
-                    <span className="text-[11px] font-bold text-emerald-500 mt-0.5 block">
-                      Kcal/ngày
-                    </span>
-                  </div>
-
-                  <div
-                    className={`p-3.5 rounded-3xl border ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                  >
-                    <span className="text-[10px] text-neutral-400 font-bold block uppercase">
-                      Chiều cao
-                    </span>
-                    <span
-                      className={`text-2xl font-black mt-1 block ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {profile.height}
-                    </span>
-                    <span className="text-[11px] text-neutral-400 mt-0.5 block">
-                      cm
-                    </span>
-                  </div>
-
-                  <div
-                    className={`p-3.5 rounded-3xl border ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                  >
-                    <span className="text-[10px] text-neutral-400 font-bold block uppercase">
-                      Cân nặng
-                    </span>
-                    <span
-                      className={`text-2xl font-black mt-1 block ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {profile.weight}
-                    </span>
-                    <span className="text-[11px] text-neutral-400 mt-0.5 block">
-                      kg
-                    </span>
-                  </div>
-                </div>
-
-                {/* Donut Chart & Sliders */}
-                <div
-                  className={`p-4 rounded-3xl border space-y-4 ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-500">⚡</span>
-                    <h3
-                      className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                    >
-                      Mục tiêu dinh dưỡng
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center justify-around py-2">
-                    <div className="relative w-36 h-36 flex items-center justify-center">
-                      <svg
-                        className="w-full h-full transform -rotate-90"
-                        viewBox="0 0 100 100"
-                      >
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="38"
-                          stroke="#f59e0b"
-                          strokeWidth="9"
-                          fill="transparent"
-                          strokeDasharray="238.7"
-                          strokeDashoffset="0"
-                        />
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="38"
-                          stroke="#10b981"
-                          strokeWidth="9"
-                          fill="transparent"
-                          strokeDasharray="238.7"
-                          strokeDashoffset={238.7 * (profile.carbsRatio / 100)}
-                        />
-                        <circle
-                          cx="50"
-                          cy="50"
-                          r="38"
-                          stroke="#3b82f6"
-                          strokeWidth="9"
-                          fill="transparent"
-                          strokeDasharray="238.7"
-                          strokeDashoffset={
-                            238.7 *
-                            ((profile.carbsRatio + profile.proteinRatio) / 100)
-                          }
-                        />
-                      </svg>
-                      <div className="absolute flex flex-col items-center">
-                        <span
-                          className={`text-2xl font-black ${darkMode ? "text-white" : "text-neutral-900"}`}
-                        >
-                          216g
-                        </span>
-                        <span className="text-[10px] text-neutral-400">
-                          mỗi ngày
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-xs font-semibold">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                        <span
-                          className={
-                            darkMode ? "text-neutral-300" : "text-neutral-600"
-                          }
-                        >
-                          Carbs
-                        </span>
-                        <span
-                          className={`font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                        >
-                          {profile.carbsRatio}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#10b981]" />
-                        <span
-                          className={
-                            darkMode ? "text-neutral-300" : "text-neutral-600"
-                          }
-                        >
-                          Chất đạm
-                        </span>
-                        <span
-                          className={`font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                        >
-                          {profile.proteinRatio}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
-                        <span
-                          className={
-                            darkMode ? "text-neutral-300" : "text-neutral-600"
-                          }
-                        >
-                          Chất béo
-                        </span>
-                        <span
-                          className={`font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                        >
-                          {profile.fatRatio}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 pt-2 text-xs">
-                    <div>
-                      <div className="flex justify-between text-neutral-400 font-semibold mb-1">
-                        <span>Carbs</span>
-                        <span>
-                          {profile.carbsRatio}% · {targetCarbsGrams}g
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="10"
-                        max="60"
-                        value={profile.carbsRatio}
-                        onChange={(e) =>
-                          setProfile({
-                            ...profile,
-                            carbsRatio: Number(e.target.value),
-                          })
-                        }
-                        className="w-full accent-[#10b981] bg-neutral-200 h-1.5 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-neutral-400 font-semibold mb-1">
-                        <span>Chất đạm</span>
-                        <span>
-                          {profile.proteinRatio}% · {targetProteinGrams}g
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="10"
-                        max="60"
-                        value={profile.proteinRatio}
-                        onChange={(e) =>
-                          setProfile({
-                            ...profile,
-                            proteinRatio: Number(e.target.value),
-                          })
-                        }
-                        className="w-full accent-[#10b981] bg-neutral-200 h-1.5 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-neutral-400 font-semibold mb-1">
-                        <span>Chất béo</span>
-                        <span>
-                          {profile.fatRatio}% · {targetFatGrams}g
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="10"
-                        max="60"
-                        value={profile.fatRatio}
-                        onChange={(e) =>
-                          setProfile({
-                            ...profile,
-                            fatRatio: Number(e.target.value),
-                          })
-                        }
-                        className="w-full accent-[#10b981] bg-neutral-200 h-1.5 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bệnh lý */}
-                <div
-                  className={`p-4 rounded-3xl border space-y-3 ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                >
-                  <div>
-                    <h3
-                      className={`text-sm font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                    >
-                      Tình trạng sức khoẻ
-                    </h3>
-                    <p className="text-[11px] text-neutral-400 mt-0.5">
-                      AI sẽ dùng thông tin này để lọc món phù hợp.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {[
-                      ...new Set([
-                        ...DEFAULT_CONDITIONS,
-                        ...profile.conditions,
-                      ]),
-                    ].map((cond) => {
-                      const isSelected = profile.conditions.includes(cond);
-                      return (
-                        <button
-                          key={cond}
-                          onClick={() => {
-                            if (isSelected) {
-                              setProfile({
-                                ...profile,
-                                conditions: profile.conditions.filter(
-                                  (c) => c !== cond,
-                                ),
-                              });
-                            } else {
-                              setProfile({
-                                ...profile,
-                                conditions: [...profile.conditions, cond],
-                              });
-                            }
-                          }}
-                          className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
-                            isSelected
-                              ? "bg-[#10b981] text-white shadow-sm"
-                              : darkMode
-                                ? "bg-[#222824] text-neutral-300 border border-neutral-700/60"
-                                : "bg-neutral-100 text-neutral-600"
-                          }`}
-                        >
-                          {cond}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="pt-2 flex gap-2">
-                    <input
-                      type="text"
-                      value={customConditionInput}
-                      onChange={(e) => setCustomConditionInput(e.target.value)}
-                      placeholder="Tự nhập bệnh lý / dị ứng khác..."
-                      className={`flex-1 px-3 py-2 rounded-xl text-xs border focus:outline-none focus:border-emerald-500 ${
-                        darkMode
-                          ? "bg-neutral-900 border-neutral-700 text-white placeholder-neutral-500"
-                          : "bg-neutral-50 border-neutral-300 text-neutral-800"
-                      }`}
-                    />
-                    <button
-                      onClick={handleAddCustomCondition}
-                      className="bg-[#10b981] hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-all"
-                    >
-                      + Thêm
-                    </button>
-                  </div>
-                </div>
-
-                {/* Cài đặt */}
-                <div
-                  className={`p-4 rounded-3xl border space-y-3.5 ${darkMode ? "bg-[#181c19] border-neutral-800" : "bg-white border-neutral-200 shadow-xs"}`}
-                >
-                  <div
-                    onClick={() => setShowSetupModal(true)}
-                    className="flex justify-between items-center cursor-pointer py-1"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-emerald-500 text-base">📏</span>
-                      <span
-                        className={`text-xs font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                      >
-                        Cập nhật chỉ số
-                      </span>
-                    </div>
-                    <span className="text-neutral-400 text-sm">›</span>
-                  </div>
-
-                  <div className="flex justify-between items-center py-1">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-emerald-500 text-base">🔔</span>
-                      <span
-                        className={`text-xs font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                      >
-                        Lịch nhắc uống nước
-                      </span>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setProfile({
-                          ...profile,
-                          waterReminder: !profile.waterReminder,
-                        })
-                      }
-                      className={`w-10 h-5 rounded-full transition-colors relative ${profile.waterReminder ? "bg-[#10b981]" : "bg-neutral-300"}`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-full bg-white transition-all absolute top-0.5 ${profile.waterReminder ? "right-0.5" : "left-0.5"}`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* Switch chế độ tối */}
-                  <div className="flex justify-between items-center py-1">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-emerald-500 text-base">🌙</span>
-                      <span
-                        className={`text-xs font-bold ${darkMode ? "text-white" : "text-neutral-800"}`}
-                      >
-                        Chế độ tối
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setDarkMode(!darkMode)}
-                      className={`w-10 h-5 rounded-full transition-colors relative ${darkMode ? "bg-[#10b981]" : "bg-neutral-300"}`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-full bg-white transition-all absolute top-0.5 ${darkMode ? "right-0.5" : "left-0.5"}`}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===================== MODAL CHỌN KHẨU PHẦN THEO GRAM ===================== */}
-        {selectedFoodForPortion && (
-          <div className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4">
-            <div
-              className={`w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl border-t sm:border space-y-4 animate-in slide-in-from-bottom duration-200 ${
-                darkMode
-                  ? "bg-[#181c19] text-white border-neutral-700"
-                  : "bg-white text-neutral-800 border-neutral-200"
-              }`}
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-2xl shadow-inner">
-                    {selectedFoodForPortion.icon}
-                  </div>
-                  <div>
-                    <h3
-                      className={`font-bold text-sm ${darkMode ? "text-white" : "text-neutral-900"}`}
-                    >
-                      {selectedFoodForPortion.name}
-                    </h3>
-                    <p className="text-[11px] text-neutral-400">
-                      Gốc: {selectedFoodForPortion.calories} kcal / 100g
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSelectedFoodForPortion(null)}
-                  className="text-neutral-400 hover:text-neutral-600 text-xl font-bold p-1"
-                >
-                  ✕
-                </button>
-              </div>
-
               <div>
-                <label
-                  className={`text-xs font-bold block mb-1.5 ${darkMode ? "text-neutral-300" : "text-neutral-700"}`}
-                >
-                  Thêm vào bữa ăn:
-                </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { id: "breakfast", label: "Sáng" },
-                    { id: "lunch", label: "Trưa" },
-                    { id: "dinner", label: "Tối" },
-                    { id: "snack", label: "Phụ" },
-                  ].map((slot) => (
+                <div className="flex items-center font-black text-2xl tracking-tight leading-none select-none">
+                  <span className="text-white drop-shadow-sm">Clean</span>
+                  <span className="text-[#4ade80] ml-0.5 drop-shadow-sm flex items-center">
+                    <span>B</span>
+                    <span className="relative inline-flex items-center justify-center">
+                      <svg
+                        className="w-2.5 h-2.5 text-[#4ade80] absolute -top-1.5 left-[1px] transform rotate-[35deg]"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path d="M20.5 3.5c-4.5 0-11 3.5-14 9.5-1.5 3-1 6 1.5 7.5 3.5 2 8-1 11-6 2.5-4 2.5-9 1.5-11z" />
+                      </svg>
+                      <span>ı</span>
+                    </span>
+                    <span>te</span>
+                  </span>
+                </div>
+                <p className="text-[11px] font-medium tracking-wide text-emerald-100/90 lowercase mt-0.5">
+                  small bites . brighter lives
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab("profile")}
+              className="max-w-[125px] truncate text-xs bg-black/25 hover:bg-black/35 backdrop-blur-md px-3 py-1.5 rounded-full text-emerald-100 font-semibold border border-white/15 shadow-sm transition-all text-center active:scale-95"
+            >
+              {isPremium ? "👑 VIP" : `👋 ${profile?.name || "Bạn mới"}`}
+            </button>
+          </div>
+          <div className="flex items-center justify-between bg-black/25 backdrop-blur-md rounded-2xl mt-4 px-3 py-2 border border-white/10">
+            <button
+              onClick={() => changeDay(-1)}
+              className="w-8 h-8 flex items-center justify-center text-white/80 hover:text-white active:scale-90 text-sm font-bold"
+            >
+              ❮
+            </button>
+            <button
+              onClick={() => {
+                setCalendarViewDate(new Date(currentDate));
+                setShowCalendarModal(true);
+              }}
+              className="flex items-center gap-2 text-xs font-bold tracking-wide text-white hover:text-emerald-200 transition-colors py-1 px-3 rounded-lg hover:bg-white/10 active:scale-95"
+            >
+              <span>📅</span>
+              <span>{formatDateDisplay(currentDate)}</span>
+              <span className="text-[10px] text-emerald-200">▼</span>
+            </button>
+            <button
+              onClick={() => changeDay(1)}
+              className="w-8 h-8 flex items-center justify-center text-white/80 hover:text-white active:scale-90 text-sm font-bold"
+            >
+              ❯
+            </button>
+          </div>
+        </header>
+
+        {/* ================= 4 TABS GIAO DIỆN ================= */}
+        <main className="flex-1 px-4 pt-4 overflow-y-auto">
+          {/* TAB 1: NHẬT KÝ */}
+          {activeTab === "journal" && (
+            <div className="space-y-4">
+              <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-5 shadow-lg">
+                <div className="flex flex-col items-center">
+                  <div className="relative w-44 h-44 flex items-center justify-center">
+                    <svg
+                      className="w-full h-full transform -rotate-90"
+                      viewBox="0 0 100 100"
+                    >
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        stroke="#27272a"
+                        strokeWidth="8"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        stroke="#10b981"
+                        strokeWidth="8"
+                        strokeDasharray={264}
+                        strokeDashoffset={
+                          264 -
+                          (264 * Math.min(consumed.calories, targetCalories)) /
+                            targetCalories
+                        }
+                        strokeLinecap="round"
+                        fill="transparent"
+                        className="transition-all duration-700 ease-out"
+                      />
+                    </svg>
+                    <div className="absolute flex flex-col items-center text-center">
+                      <span className="text-4xl font-extrabold tracking-tight text-white">
+                        {remainingCalories}
+                      </span>
+                      <span className="text-xs text-neutral-400 font-medium mt-0.5">
+                        kcal còn lại
+                      </span>
+                      <span className="text-[11px] font-semibold text-emerald-400 mt-1 bg-emerald-950/60 px-2.5 py-0.5 rounded-full border border-emerald-800/40">
+                        {Math.round((consumed.calories / targetCalories) * 100)}
+                        % mục tiêu
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 w-full mt-4">
+                    <div className="bg-[#27272a]/60 border border-neutral-800 rounded-2xl p-3 flex items-center gap-3">
+                      <span className="text-xl">🔥</span>
+                      <div>
+                        <div className="text-xs text-neutral-400 font-medium">
+                          Đã nạp
+                        </div>
+                        <div className="text-base font-bold text-white">
+                          {consumed.calories}{" "}
+                          <span className="text-xs font-normal text-neutral-400">
+                            kcal
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-[#27272a]/60 border border-neutral-800 rounded-2xl p-3 flex items-center gap-3">
+                      <span className="text-xl">🎯</span>
+                      <div>
+                        <div className="text-xs text-neutral-400 font-medium">
+                          Mục tiêu
+                        </div>
+                        <div className="text-base font-bold text-white">
+                          {targetCalories}{" "}
+                          <span className="text-xs font-normal text-neutral-400">
+                            kcal
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full mt-4 space-y-2.5 bg-[#27272a]/30 p-3.5 rounded-2xl border border-neutral-800/80">
+                    <div>
+                      <div className="flex justify-between text-xs font-medium mb-1">
+                        <span className="text-neutral-300">Carbs</span>
+                        <span className="text-neutral-400">
+                          {consumed.carbs}/{targetCarbs}g
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-amber-500 rounded-full"
+                          style={{
+                            width: `${Math.min(100, (consumed.carbs / targetCarbs) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs font-medium mb-1">
+                        <span className="text-neutral-300">Chất đạm</span>
+                        <span className="text-neutral-400">
+                          {consumed.protein}/{targetProtein}g
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{
+                            width: `${Math.min(100, (consumed.protein / targetProtein) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs font-medium mb-1">
+                        <span className="text-neutral-300">Chất béo</span>
+                        <span className="text-neutral-400">
+                          {consumed.fat}/{targetFat}g
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full"
+                          style={{
+                            width: `${Math.min(100, (consumed.fat / targetFat) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Nước uống */}
+              <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-4 shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 text-lg">💧</span>
+                    <div>
+                      <h3 className="text-sm font-bold text-white">
+                        Uống nước
+                      </h3>
+                      <p className="text-xs text-neutral-400">
+                        {waterGlasses * 250}/{targetWater} ml • 250 ml mỗi ly
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setWaterGlasses(0)}
+                    className="text-xs text-neutral-400 hover:text-white bg-[#27272a] px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    ↺ Đặt lại
+                  </button>
+                </div>
+                <div className="grid grid-cols-8 gap-1.5">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
                     <button
-                      key={slot.id}
-                      onClick={() => setSelectedMealSlot(slot.id)}
-                      className={`py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                        selectedMealSlot === slot.id
-                          ? "bg-[#10b981] text-white border-emerald-500 shadow-xs"
-                          : darkMode
-                            ? "bg-neutral-800 text-neutral-300 border-neutral-700"
-                            : "bg-neutral-100 text-neutral-600 border-neutral-200"
+                      key={num}
+                      onClick={() =>
+                        setWaterGlasses(num === waterGlasses ? num - 1 : num)
+                      }
+                      className={`h-11 rounded-xl flex items-center justify-center font-bold text-xs transition-all ${
+                        num <= waterGlasses
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                          : "bg-[#27272a] text-neutral-500 hover:bg-[#323238]"
                       }`}
                     >
-                      {slot.label}
+                      {num}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span
-                    className={`font-bold ${darkMode ? "text-neutral-300" : "text-neutral-700"}`}
+              {/* 4 Bữa ăn */}
+              {[
+                {
+                  key: "breakfast",
+                  title: "Bữa Sáng",
+                  time: "06:00 - 09:00",
+                  icon: "🥣",
+                },
+                {
+                  key: "lunch",
+                  title: "Bữa Trưa",
+                  time: "11:00 - 13:00",
+                  icon: "🍲",
+                },
+                {
+                  key: "dinner",
+                  title: "Bữa Tối",
+                  time: "18:00 - 20:00",
+                  icon: "🥗",
+                },
+                {
+                  key: "snack",
+                  title: "Bữa Phụ",
+                  time: "15:00 - 16:00",
+                  icon: "🍎",
+                },
+              ].map((mealSection) => {
+                const items = meals[mealSection.key];
+                const mealTotalCalo = items.reduce((s, i) => s + i.calories, 0);
+                return (
+                  <div
+                    key={mealSection.key}
+                    className="bg-[#18181b] border border-neutral-800 rounded-3xl p-4 shadow-lg"
                   >
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 font-bold text-sm text-white">
+                          <span>{mealSection.icon}</span>
+                          <span>{mealSection.title}</span>
+                        </div>
+                        <span className="text-[11px] text-neutral-500 font-medium">
+                          {mealSection.time}
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold bg-emerald-950/60 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-800/40">
+                        {mealTotalCalo} kcal
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between bg-[#27272a]/50 p-2.5 rounded-2xl border border-neutral-800"
+                        >
+                          <div className="flex-1 pr-2">
+                            <h4 className="text-xs font-semibold text-neutral-100">
+                              {item.name}
+                            </h4>
+                            <p className="text-[11px] text-neutral-400">
+                              {item.weight}g • {item.protein}g đạm •{" "}
+                              {item.carbs}g carbs
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-emerald-400">
+                              +{item.calories}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleRemoveFood(mealSection.key, item.id)
+                              }
+                              className="w-5 h-5 flex items-center justify-center text-neutral-500 hover:text-red-400 rounded-full text-sm font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setModalMealType(mealSection.key);
+                        setActiveTab("foods");
+                      }}
+                      className="w-full mt-3 py-2 border border-dashed border-neutral-700 hover:border-emerald-500 text-neutral-400 hover:text-emerald-400 text-xs font-semibold rounded-2xl flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <span>+</span> Thêm món vào {mealSection.title}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* TAB 2: THỰC PHẨM */}
+          {activeTab === "foods" && (
+            <div className="space-y-4">
+              <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-4">
+                <h2 className="text-lg font-bold text-white">
+                  Danh mục thực phẩm
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Kho 156 món ăn & gia vị chuẩn thành phần dinh dưỡng
+                </p>
+                <div className="mt-3 relative">
+                  <input
+                    type="text"
+                    placeholder="Tìm phở, ức gà, bánh mì, bún bò, rau, gia vị..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-[#27272a] border border-neutral-700 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <span className="absolute left-3.5 top-2.5 text-neutral-400 text-sm">
+                    🔍
+                  </span>
+                </div>
+
+                <div className="flex gap-2 mt-3 overflow-x-auto pb-1 scrollbar-none">
+                  {[
+                    "Tất cả",
+                    "Món ăn",
+                    "Đạm",
+                    "Tinh bột",
+                    "Rau củ",
+                    "Trái cây",
+                    "Gia vị",
+                  ].map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
+                        selectedCategory === cat
+                          ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30"
+                          : "bg-[#27272a] text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setShowCustomFoodModal(true)}
+                  className="w-full mt-4 py-2.5 bg-emerald-950/30 hover:bg-emerald-900/50 border border-emerald-500/40 border-dashed text-emerald-400 font-semibold rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <span>+</span> Không tìm thấy món? Tự nhập thủ công
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {filteredFoods.map((food) => (
+                  <div
+                    key={food.id}
+                    onClick={() => {
+                      setSelectedFoodForModal(food);
+                      setModalGrams(100);
+                    }}
+                    className="bg-[#18181b] hover:bg-[#202024] active:scale-[0.99] border border-neutral-800 rounded-2xl p-3 flex items-center justify-between cursor-pointer transition-all shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-[#27272a] overflow-hidden flex items-center justify-center border border-neutral-800 shrink-0">
+                        <img
+                          src={food.image}
+                          alt={food.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                            e.currentTarget.nextSibling.style.display = "flex";
+                          }}
+                        />
+                        <div
+                          style={{ display: "none" }}
+                          className="w-full h-full items-center justify-center text-xl"
+                        >
+                          {food.category === "Món ăn"
+                            ? "🍲"
+                            : food.category === "Đạm"
+                              ? "🍗"
+                              : food.category === "Tinh bột"
+                                ? "🍚"
+                                : food.category === "Rau củ"
+                                  ? "🥦"
+                                  : food.category === "Trái cây"
+                                    ? "🍎"
+                                    : "🧂"}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-neutral-100">
+                          {food.name}
+                        </h4>
+                        <p className="text-[11px] text-neutral-400 mt-0.5">
+                          {food.protein}g đạm • {food.carbs}g carbs • {food.fat}
+                          g béo / 100g
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-extrabold text-emerald-400">
+                        {food.calories}
+                      </div>
+                      <div className="text-[10px] text-neutral-500">
+                        kcal/100g
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: THỰC ĐƠN AI */}
+          {activeTab === "ai" && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-br from-emerald-950/80 via-[#18181b] to-[#18181b] border border-emerald-900/40 rounded-3xl p-5 shadow-lg relative">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">✨</span>
+                  <div>
+                    <h2 className="text-base font-bold text-white">
+                      AI Lên Thực Đơn
+                    </h2>
+                    <p className="text-xs text-neutral-400">
+                      Chế độ:{" "}
+                      <span className="text-emerald-400 font-semibold">
+                        {profile?.medical === "Không có"
+                          ? "Cá nhân hóa tự do"
+                          : profile?.medical || "Bình thường"}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 bg-[#27272a]/60 border border-neutral-800 rounded-2xl p-3">
+                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
+                    Bạn muốn ăn gì hôm nay?
+                  </label>
+                  <textarea
+                    rows="2"
+                    placeholder="VD: Tôi muốn 3 bữa đều có thịt bò, có sữa, trứng..."
+                    value={aiCustomNote}
+                    onChange={(e) => setAiCustomNote(e.target.value)}
+                    className="w-full bg-[#18181b] border border-emerald-500/50 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-400 resize-none"
+                  />
+                </div>
+
+                <button
+                  onClick={handleApplyAiMenu}
+                  disabled={isAiLoading}
+                  className="w-full mt-4 bg-[#27272a] hover:bg-[#323238] border border-emerald-500/50 active:scale-[0.98] disabled:opacity-60 text-emerald-400 font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all"
+                >
+                  {isAiLoading ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></span>
+                      <span>AI đang thiết kế thực đơn...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>⚡</span>
+                      <span>AI lên thực đơn</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* BẢN NHÁP (PREVIEW) */}
+              {generatedAiMenu && (
+                <div className="bg-[#18181b] border border-emerald-800/60 rounded-3xl p-5 shadow-lg animate-fade-in">
+                  <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="text-lg">🍱</span> Thực đơn AI gợi ý cho
+                    bạn:
+                  </h3>
+
+                  <div className="space-y-3 mb-5">
+                    {[
+                      { key: "breakfast", label: "Sáng" },
+                      { key: "lunch", label: "Trưa" },
+                      { key: "dinner", label: "Tối" },
+                      { key: "snack", label: "Phụ" },
+                    ].map((meal) => {
+                      const items = generatedAiMenu[meal.key] || [];
+                      if (items.length === 0) return null;
+                      const totalCal = items.reduce(
+                        (s, i) => s + i.calories,
+                        0,
+                      );
+
+                      return (
+                        <div
+                          key={meal.key}
+                          className="bg-[#27272a]/50 border border-neutral-800 rounded-xl p-3"
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                              {meal.label}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 font-bold bg-neutral-800 px-2 py-0.5 rounded-md">
+                              {totalCal} kcal
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {items.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="text-xs text-neutral-200"
+                              >
+                                •{" "}
+                                <span className="font-semibold">
+                                  {item.name}
+                                </span>{" "}
+                                <span className="text-neutral-500">
+                                  ({item.weight}g)
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setMeals(generatedAiMenu);
+                      setGeneratedAiMenu(null);
+                      setAiSuccessAlert(true);
+                      setTimeout(() => {
+                        setAiSuccessAlert(false);
+                        setActiveTab("journal");
+                      }, 1200);
+                    }}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all"
+                  >
+                    ✓ Chốt thực đơn này vào Nhật ký
+                  </button>
+                </div>
+              )}
+
+              {aiSuccessAlert && (
+                <div className="mt-3 bg-emerald-900/60 border border-emerald-500 text-emerald-200 text-xs text-center py-2 rounded-xl">
+                  ✓ Đã nạp thực đơn thành công!
+                </div>
+              )}
+
+              {/* MÔ HÌNH 4: KHỐI TƯ VẤN CHUYÊN GIA 1-1 */}
+              <div
+                onClick={() => setShowExpertModal(true)}
+                className="bg-[#18181b] border border-emerald-800/40 hover:border-emerald-500/60 rounded-3xl p-4 cursor-pointer transition-all shadow-md group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-950 flex items-center justify-center text-xl border border-emerald-800/50">
+                      🩺
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">
+                          Tư vấn 1-1 với Bác sĩ Dinh dưỡng
+                        </h4>
+                        <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/60 px-1.5 py-0.5 rounded font-bold">
+                          Mới
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 mt-0.5">
+                        Lộ trình trị liệu ăn uống cá nhân hóa cho bệnh lý
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-neutral-500 group-hover:text-white transition-colors">
+                    ❯
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: CÁ NHÂN */}
+          {activeTab === "profile" && (
+            <div className="space-y-4">
+              {/* MÔ HÌNH 1: THẺ GÓI PREMIUM */}
+              <div
+                onClick={() => setShowPremiumModal(true)}
+                className={`rounded-[1.75rem] p-5 cursor-pointer shadow-xl relative overflow-hidden transition-all active:scale-[0.99] border ${
+                  isPremium
+                    ? "bg-gradient-to-r from-amber-600 via-emerald-600 to-teal-700 border-amber-400/40"
+                    : "bg-gradient-to-r from-[#4f46e5] via-[#7c3aed] to-[#c026d3] border-white/10 hover:opacity-95"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex-1 pr-2">
+                    <h3 className="text-lg font-bold text-white tracking-tight">
+                      {isPremium ? "Đã kích hoạt VIP 👑" : "Gói Premium"}
+                    </h3>
+                    <p className="text-xs text-white/90 mt-1.5 leading-relaxed font-normal">
+                      {isPremium
+                        ? "Bạn đang trải nghiệm bản không quảng cáo & đầy đủ tính năng cao cấp."
+                        : "Trải nghiệm không quảng cáo và sử dụng đầy đủ các tính năng nâng cao."}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-white flex items-center justify-center">
+                    <svg
+                      className="w-12 h-12 text-white drop-shadow"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M2 19h20v2H2v-2zm0-14l5 4.5L12 3l5 6.5L22 5v12H2V5z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* THẺ BMI */}
+              <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-neutral-300">
+                    Chỉ số khối cơ thể (BMI)
+                  </h3>
+                  <button
+                    onClick={() => setShowOnboarding(true)}
+                    className="text-xs text-emerald-400 hover:underline font-semibold"
+                  >
+                    Chỉnh sửa
+                  </button>
+                </div>
+                <div className="mt-4 flex items-baseline gap-3">
+                  <span className="text-4xl font-extrabold text-emerald-400">
+                    {profile?.bmi || "18.6"}
+                  </span>
+                  <span className="text-xs font-bold text-neutral-300 bg-neutral-800 px-3 py-1 rounded-full">
+                    {parseFloat(profile?.bmi || "18.6") < 18.5
+                      ? "Hơi gầy"
+                      : parseFloat(profile?.bmi || "18.6") <= 22.9
+                        ? "Cân nặng tốt (Chuẩn Châu Á)"
+                        : "Tiền béo phì"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-neutral-800 text-center">
+                  <div className="bg-[#27272a]/50 p-2.5 rounded-2xl">
+                    <div className="text-base font-bold text-white">
+                      {profile?.height || 152} cm
+                    </div>
+                    <div className="text-xs text-neutral-400">Chiều cao</div>
+                  </div>
+                  <div className="bg-[#27272a]/50 p-2.5 rounded-2xl">
+                    <div className="text-base font-bold text-white">
+                      {profile?.weight || 43} kg
+                    </div>
+                    <div className="text-xs text-neutral-400">Cân nặng</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* THÔNG TIN HỒ SƠ */}
+              <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-4 shadow-lg space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400">Tên của bạn</span>
+                  <span className="font-bold text-white">
+                    {profile?.name || "Chưa cập nhật"}
+                  </span>
+                </div>
+                {profile?.email && (
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-neutral-400">Email nhận báo cáo</span>
+                    <span className="font-bold text-emerald-400 truncate max-w-[200px]">
+                      {profile.email}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400">Độ tuổi & Giới tính</span>
+                  <span className="font-bold text-white">
+                    {profile?.age || 20} tuổi •{" "}
+                    {profile?.gender === "male" ? "Nam" : "Nữ"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400">
+                    BMR (Năng lượng chuyển hóa)
+                  </span>
+                  <span className="font-bold text-emerald-400">
+                    {profile?.bmr || 1035} kcal
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-neutral-400">Bệnh lý theo dõi</span>
+                  <span className="font-bold text-amber-400">
+                    {profile?.medical || "Không có"}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (
+                    confirm(
+                      "Bạn có muốn xóa dữ liệu đã lưu để nhập lại từ đầu?",
+                    )
+                  ) {
+                    localStorage.removeItem("cleanbite_profile");
+                    localStorage.removeItem("cleanbite_is_premium");
+                    setProfile(null);
+                    setIsPremium(false);
+                    setShowOnboarding(true);
+                  }
+                }}
+                className="w-full py-3 bg-red-950/40 border border-red-800/40 text-red-400 hover:bg-red-900/30 rounded-2xl text-xs font-semibold transition-colors"
+              >
+                Thiết lập lại hồ sơ từ đầu
+              </button>
+            </div>
+          )}
+        </main>
+
+        {/* ================= MÔ HÌNH 2: BANNER QUẢNG CÁO TỰ NHIÊN (NATIVE AD) ================= */}
+        {!isPremium && (
+          <div className="fixed bottom-16 w-full max-w-[430px] px-3 z-30">
+            <div className="bg-[#18181b]/95 backdrop-blur-md border border-neutral-700/80 rounded-2xl p-2.5 flex items-center justify-between shadow-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-950 border border-emerald-800 flex items-center justify-center text-base shrink-0">
+                  🥗
+                </div>
+                <div className="pr-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] bg-neutral-800 text-neutral-400 px-1 py-0.2 rounded font-bold">
+                      QC
+                    </span>
+                    <h5 className="text-xs font-bold text-white truncate max-w-[190px]">
+                      Bếp Eat Clean Healthy Meal
+                    </h5>
+                  </div>
+                  <p className="text-[10px] text-neutral-400 truncate max-w-[210px]">
+                    Giảm 25% cho thành viên CleanBite • ★ 4.9
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() =>
+                  alert(
+                    "Mô phỏng Doanh thu Quảng cáo (Google Ads / Brand Sponsorship):\nNgười dùng bấm xem đối tác, CleanBite ghi nhận doanh thu theo lượt tương tác (CPC).",
+                  )
+                }
+                className="bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shrink-0 transition-all active:scale-95 shadow-md shadow-emerald-500/20"
+              >
+                Xem
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MODAL LỊCH POPUP ================= */}
+        {showCalendarModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="w-full max-w-xs bg-[#18181b] border border-neutral-700 rounded-3xl p-5 text-white shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => {
+                    const prevM = new Date(calendarViewDate);
+                    prevM.setMonth(prevM.getMonth() - 1);
+                    setCalendarViewDate(prevM);
+                  }}
+                  className="w-8 h-8 rounded-full bg-[#27272a] hover:bg-neutral-700 flex items-center justify-center text-xs font-bold"
+                >
+                  ❮
+                </button>
+                <span className="text-sm font-bold text-white">
+                  Tháng {calendarViewDate.getMonth() + 1},{" "}
+                  {calendarViewDate.getFullYear()}
+                </span>
+                <button
+                  onClick={() => {
+                    const nextM = new Date(calendarViewDate);
+                    nextM.setMonth(nextM.getMonth() + 1);
+                    setCalendarViewDate(nextM);
+                  }}
+                  className="w-8 h-8 rounded-full bg-[#27272a] hover:bg-neutral-700 flex items-center justify-center text-xs font-bold"
+                >
+                  ❯
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-neutral-400">
+                <span>T2</span>
+                <span>T3</span>
+                <span>T4</span>
+                <span>T5</span>
+                <span>T6</span>
+                <span>T7</span>
+                <span>CN</span>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-xs">
+                {calendarDays.map((item, idx) => {
+                  if (!item.day) {
+                    return <div key={idx} className="h-8" />;
+                  }
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        setCurrentDate(item.date);
+                        setShowCalendarModal(false);
+                      }}
+                      className={`h-8 rounded-xl flex items-center justify-center font-semibold transition-all ${
+                        item.isSelected
+                          ? "bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/40 scale-105"
+                          : item.isToday
+                            ? "border border-emerald-500 text-emerald-400 bg-emerald-950/30"
+                            : "hover:bg-[#27272a] text-neutral-200"
+                      }`}
+                    >
+                      {item.day}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2 pt-2 border-t border-neutral-800">
+                <button
+                  onClick={() => {
+                    setCurrentDate(new Date());
+                    setShowCalendarModal(false);
+                  }}
+                  className="flex-1 py-2 bg-[#27272a] hover:bg-neutral-700 text-xs font-semibold rounded-xl text-neutral-200 transition-colors"
+                >
+                  Hôm nay
+                </button>
+                <button
+                  onClick={() => setShowCalendarModal(false)}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold rounded-xl text-white transition-colors"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MODAL CHỌN GRAM TỪ DANH SÁCH MÓN ================= */}
+        {selectedFoodForModal && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm animate-fade-in">
+            <div className="w-full max-w-[430px] bg-[#18181b] border-t border-neutral-800 rounded-t-[2rem] p-6 text-white shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-[#27272a] overflow-hidden flex items-center justify-center border border-neutral-800 shrink-0">
+                    <img
+                      src={selectedFoodForModal.image}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-neutral-100">
+                      {selectedFoodForModal.name}
+                    </h3>
+                    <p className="text-xs text-neutral-400">
+                      Gốc: {selectedFoodForModal.calories} kcal / 100g
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedFoodForModal(null)}
+                  className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center font-bold text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-400 mb-2">
+                  Thêm vào bữa ăn:
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { key: "breakfast", label: "Sáng" },
+                    { key: "lunch", label: "Trưa" },
+                    { key: "dinner", label: "Tối" },
+                    { key: "snack", label: "Phụ" },
+                  ].map((b) => (
+                    <button
+                      key={b.key}
+                      onClick={() => setModalMealType(b.key)}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                        modalMealType === b.key
+                          ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30"
+                          : "bg-[#27272a] text-neutral-400 hover:text-white"
+                      }`}
+                    >
+                      {b.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-medium text-neutral-400">
                     Khối lượng thực tế:
                   </span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={portionGrams}
-                      onChange={(e) => setPortionGrams(e.target.value)}
-                      className={`w-16 px-2 py-1 text-center font-bold text-emerald-500 border rounded-lg text-sm focus:outline-none ${
-                        darkMode
-                          ? "bg-neutral-900 border-neutral-700"
-                          : "bg-neutral-50 border-neutral-300"
-                      }`}
-                    />
-                    <span className="text-neutral-400 font-medium">gram</span>
-                  </div>
+                  <span className="text-sm font-bold text-white bg-neutral-800 px-3 py-1 rounded-lg border border-neutral-700">
+                    {modalGrams}{" "}
+                    <span className="text-xs text-neutral-400 font-normal">
+                      gram
+                    </span>
+                  </span>
                 </div>
                 <input
                   type="range"
                   min="10"
                   max="500"
                   step="5"
-                  value={portionGrams}
-                  onChange={(e) => setPortionGrams(e.target.value)}
-                  className="w-full accent-[#10b981] bg-neutral-200 h-2 rounded-lg appearance-none cursor-pointer"
+                  value={modalGrams}
+                  onChange={(e) => setModalGrams(parseInt(e.target.value))}
+                  className="w-full accent-emerald-500 cursor-pointer h-2 bg-neutral-800 rounded-lg"
                 />
               </div>
-
-              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex justify-between items-center">
-                <span className="text-xs font-bold text-emerald-600">
+              <div className="bg-emerald-950/40 border border-emerald-800/40 p-3 rounded-2xl flex items-center justify-between">
+                <span className="text-xs text-emerald-300 font-medium">
                   Năng lượng nạp vào:
                 </span>
-                <span className="text-lg font-black text-emerald-600">
+                <span className="text-lg font-extrabold text-emerald-400">
                   +
-                  {calculateGrams(
-                    selectedFoodForPortion.calories,
-                    Number(portionGrams),
+                  {Math.round(
+                    (selectedFoodForModal.calories * modalGrams) / 100,
                   )}{" "}
                   kcal
                 </span>
               </div>
-
               <button
                 onClick={handleConfirmAddFood}
-                className="w-full bg-[#10b981] hover:bg-emerald-600 text-white font-bold py-3 rounded-2xl text-xs transition-all shadow-md shadow-emerald-500/30 active:scale-[0.99]"
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl text-xs shadow-lg shadow-emerald-500/25 transition-all"
               >
                 Xác nhận thêm vào Bữa ăn
+              </button>
+              <button
+                onClick={() =>
+                  alert(
+                    `Mô phỏng Tiếp thị liên kết (Affiliate Marketing):\n• Món: ${selectedFoodForModal.name}\n• Điều hướng sang GrabFood / ShopeeFood với mã giới thiệu CleanBite.\n• CleanBite nhận hoa hồng 8% - 10% trên đơn đặt thành công.`,
+                  )
+                }
+                className="w-full py-2.5 bg-[#27272a] hover:bg-[#323238] border border-neutral-700 text-neutral-300 font-semibold rounded-2xl text-[11px] flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>🛵</span> Không tiện nấu? Đặt món này qua ShopeeFood /
+                GrabFood
               </button>
             </div>
           </div>
         )}
 
-        {/* ===================== MODAL THIẾT LẬP HỒ SƠ ===================== */}
-        {showSetupModal && (
-          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-            <div
-              className={`w-full max-w-md rounded-3xl p-5 space-y-4 shadow-2xl border ${
-                darkMode
-                  ? "bg-[#181c19] text-white border-neutral-700"
-                  : "bg-white text-neutral-800 border-neutral-200"
-              }`}
-            >
-              <div className="flex justify-between items-center">
-                <h3
-                  className={`font-bold text-base ${darkMode ? "text-white" : "text-neutral-900"}`}
-                >
-                  Cập nhật hồ sơ sức khoẻ
+        {/* ================= MODAL THÊM MÓN THỦ CÔNG MỚI ================= */}
+        {showCustomFoodModal && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/85 backdrop-blur-sm animate-fade-in">
+            <div className="w-full max-w-[430px] bg-[#18181b] border-t border-neutral-800 rounded-t-[2rem] p-6 text-white shadow-2xl space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold text-white">
+                  Tự nhập món ăn mới
                 </h3>
                 <button
-                  onClick={() => setShowSetupModal(false)}
-                  className="text-neutral-400 hover:text-neutral-600 text-lg"
+                  onClick={() => setShowCustomFoodModal(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center font-bold text-sm"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="text-[11px] text-neutral-400 block mb-1 font-semibold">
-                    Cân nặng (kg)
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
+                    Tên món ăn
                   </label>
                   <input
-                    type="number"
-                    value={profile.weight}
+                    type="text"
+                    placeholder="VD: Bánh tráng trộn, Trà sữa chocomint..."
+                    value={customFoodForm.name}
                     onChange={(e) =>
-                      setProfile({ ...profile, weight: Number(e.target.value) })
+                      setCustomFoodForm({
+                        ...customFoodForm,
+                        name: e.target.value,
+                      })
                     }
-                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold border focus:outline-none ${
-                      darkMode
-                        ? "bg-neutral-900 border-neutral-700 text-white"
-                        : "bg-neutral-50 border-neutral-300 text-neutral-800"
-                    }`}
+                    className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Khối lượng (gram)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="100"
+                      value={customFoodForm.weight}
+                      onChange={(e) =>
+                        setCustomFoodForm({
+                          ...customFoodForm,
+                          weight: parseInt(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Ước tính Calo
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="250"
+                      value={customFoodForm.calories}
+                      onChange={(e) =>
+                        setCustomFoodForm({
+                          ...customFoodForm,
+                          calories: parseInt(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
                 </div>
                 <div>
-                  <label className="text-[11px] text-neutral-400 block mb-1 font-semibold">
-                    Chiều cao (cm)
+                  <label className="block text-xs font-medium text-neutral-400 mb-2">
+                    Thêm vào bữa ăn:
                   </label>
-                  <input
-                    type="number"
-                    value={profile.height}
-                    onChange={(e) =>
-                      setProfile({ ...profile, height: Number(e.target.value) })
-                    }
-                    className={`w-full px-3 py-2 rounded-xl text-xs font-bold border focus:outline-none ${
-                      darkMode
-                        ? "bg-neutral-900 border-neutral-700 text-white"
-                        : "bg-neutral-50 border-neutral-300 text-neutral-800"
-                    }`}
-                  />
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { key: "breakfast", label: "Sáng" },
+                      { key: "lunch", label: "Trưa" },
+                      { key: "dinner", label: "Tối" },
+                      { key: "snack", label: "Phụ" },
+                    ].map((b) => (
+                      <button
+                        key={b.key}
+                        onClick={() =>
+                          setCustomFoodForm({
+                            ...customFoodForm,
+                            mealType: b.key,
+                          })
+                        }
+                        className={`py-2 rounded-xl text-xs font-bold transition-all ${customFoodForm.mealType === b.key ? "bg-emerald-500 text-white" : "bg-[#27272a] text-neutral-400"}`}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-
-              <div>
-                <label className="text-[11px] text-neutral-400 block mb-1 font-semibold">
-                  Bệnh lý chính
-                </label>
-                <select
-                  value={profile.conditions[0] || "Đau dạ dày"}
-                  onChange={(e) =>
-                    setProfile({ ...profile, conditions: [e.target.value] })
-                  }
-                  className={`w-full px-3 py-2 rounded-xl text-xs font-bold border focus:outline-none ${
-                    darkMode
-                      ? "bg-neutral-900 border-neutral-700 text-white"
-                      : "bg-neutral-50 border-neutral-300 text-neutral-800"
-                  }`}
-                >
-                  {DEFAULT_CONDITIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <button
                 onClick={() => {
-                  setShowSetupModal(false);
-                  setActiveTab("profile");
+                  if (!customFoodForm.name)
+                    return alert("Vui lòng nhập tên món!");
+                  const newItem = {
+                    id: Date.now(),
+                    name: customFoodForm.name,
+                    weight: customFoodForm.weight,
+                    calories: customFoodForm.calories,
+                    protein: 0,
+                    carbs: 0,
+                    fat: 0,
+                  };
+                  setMeals((prev) => ({
+                    ...prev,
+                    [customFoodForm.mealType]: [
+                      ...prev[customFoodForm.mealType],
+                      newItem,
+                    ],
+                  }));
+                  setShowCustomFoodModal(false);
+                  setCustomFoodForm({
+                    name: "",
+                    weight: 100,
+                    calories: 250,
+                    mealType: "breakfast",
+                  });
+                  setActiveTab("journal");
                 }}
-                className="w-full bg-[#10b981] hover:bg-emerald-600 text-white font-bold py-3 rounded-2xl text-xs transition-all shadow-md shadow-emerald-500/30"
+                className="w-full mt-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-xs shadow-lg shadow-emerald-500/25 transition-all"
               >
-                Hoàn tất & Xem hồ sơ cá nhân
+                Thêm ngay vào Nhật ký
               </button>
             </div>
           </div>
         )}
 
-        {/* ===================== BOTTOM NAVIGATION (4 TABS) ===================== */}
-        <nav
-          className={`fixed bottom-0 w-full max-w-md border-t px-4 py-2 flex justify-between items-center z-30 transition-colors ${
-            darkMode
-              ? "bg-[#121212]/95 border-neutral-800 backdrop-blur"
-              : "bg-white/95 border-neutral-200 backdrop-blur"
-          }`}
-        >
+        {/* ================= MODAL THÔNG TIN GÓI PREMIUM ================= */}
+        {showPremiumModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
+            <div className="w-full max-w-sm bg-[#18181b] border border-purple-500/40 rounded-3xl p-6 text-white shadow-2xl space-y-4">
+              <div className="text-center">
+                <span className="text-amber-300 text-2xl">👑</span>
+                <h3 className="text-lg font-extrabold text-white mt-1">
+                  CleanBite Premium
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Nâng tầm phong cách sống lành mạnh
+                </p>
+              </div>
+              <div className="space-y-2.5 text-xs">
+                <div className="flex items-center gap-2 bg-[#27272a]/70 p-2.5 rounded-xl border border-neutral-700">
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  <span>Tắt hoàn toàn toàn bộ quảng cáo</span>
+                </div>
+                <div className="flex items-center gap-2 bg-[#27272a]/70 p-2.5 rounded-xl border border-neutral-700">
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  <span>Mở khóa AI Menu 7 ngày & Lịch đi chợ tuần</span>
+                </div>
+                <div className="flex items-center gap-2 bg-[#27272a]/70 p-2.5 rounded-xl border border-neutral-700">
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  <span>Xuất báo cáo dinh dưỡng PDF gửi chuyên gia</span>
+                </div>
+                <div className="flex items-center gap-2 bg-[#27272a]/70 p-2.5 rounded-xl border border-neutral-700">
+                  <span className="text-emerald-400 font-bold">✓</span>
+                  <span>Tặng 1 buổi tư vấn 1-1 với Bác sĩ Dinh dưỡng</span>
+                </div>
+              </div>
+              <div className="bg-purple-950/40 border border-purple-700/50 p-3 rounded-2xl text-center">
+                <div className="text-xs text-purple-300 font-medium">
+                  Chỉ từ
+                </div>
+                <div className="text-xl font-black text-amber-300">
+                  39.000 đ{" "}
+                  <span className="text-xs text-white/70 font-normal">
+                    / tháng
+                  </span>
+                </div>
+                <div className="text-[10px] text-neutral-400">
+                  Hoặc 299.000 đ / năm (Tiết kiệm 35%)
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowPremiumModal(false)}
+                  className="flex-1 py-2.5 bg-[#27272a] hover:bg-neutral-700 text-xs font-semibold rounded-xl text-neutral-300"
+                >
+                  Để sau
+                </button>
+                <button
+                  onClick={() => {
+                    setIsPremium(true);
+                    localStorage.setItem("cleanbite_is_premium", "true");
+                    setShowPremiumModal(false);
+                    alert(
+                      "Chúc mừng! Bạn đã kích hoạt thành công Gói Premium (Mô phỏng).\nBanner quảng cáo đã được ẩn hoàn toàn!",
+                    );
+                  }}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-emerald-600 text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-600/30"
+                >
+                  Dùng thử 7 ngày
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MODAL TƯ VẤN CHUYÊN GIA 1-1 ================= */}
+        {showExpertModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
+            <div className="w-full max-w-sm bg-[#18181b] border border-emerald-800 rounded-3xl p-6 text-white shadow-2xl space-y-4">
+              <div className="text-center">
+                <span className="text-3xl">🩺</span>
+                <h3 className="text-base font-extrabold text-white mt-1">
+                  Kết nối Bác sĩ Dinh dưỡng
+                </h3>
+                <p className="text-xs text-neutral-400">
+                  Hỗ trợ người bệnh: {profile?.medical || "Đau dạ dày"}
+                </p>
+              </div>
+              <div className="bg-[#27272a] p-3 rounded-2xl text-xs space-y-1.5 border border-neutral-700">
+                <div className="font-bold text-emerald-400">
+                  BS.CKI Nguyễn Minh Tuấn
+                </div>
+                <div className="text-[11px] text-neutral-300">
+                  Viện Nghiên cứu Dinh dưỡng TP.HCM
+                </div>
+                <div className="text-[10px] text-neutral-400">
+                  10 năm kinh nghiệm điều trị dinh dưỡng bệnh lý tiêu hóa
+                </div>
+              </div>
+              <div className="text-[11px] text-neutral-300 space-y-1 bg-emerald-950/30 p-3 rounded-xl border border-emerald-900/50">
+                <div>• Hình thức: Gọi Video trực tuyến 45 phút</div>
+                <div>• Kèm thực đơn cá nhân hóa 14 ngày</div>
+                <div>• Chi phí: 250.000 đ / buổi</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowExpertModal(false)}
+                  className="flex-1 py-2.5 bg-[#27272a] text-xs font-semibold rounded-xl text-neutral-300"
+                >
+                  Đóng
+                </button>
+                <button
+                  onClick={() => {
+                    alert(
+                      "Mô phỏng Dịch vụ Chuyên gia B2B2C:\n• Yêu cầu tư vấn đã được gửi đi.\n• CleanBite giữ vai trò nền tảng trung gian kết nối và thu phí chiết khấu 15%.",
+                    );
+                    setShowExpertModal(false);
+                  }}
+                  className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/20"
+                >
+                  Đặt lịch hẹn
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= ONBOARDING MODAL ================= */}
+        {showOnboarding && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
+            <div className="w-full max-w-sm bg-[#18181b] border border-neutral-800 rounded-3xl p-6 text-white shadow-2xl">
+              <div className="text-center mb-4">
+                <span className="text-emerald-400 text-[11px] font-bold uppercase tracking-wider bg-emerald-950/70 px-3 py-1 rounded-full border border-emerald-800/50">
+                  Chào mừng bạn
+                </span>
+                <h2 className="text-xl font-bold mt-2">
+                  Thiết lập hồ sơ CleanBite
+                </h2>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Cá nhân hóa lượng Calo và chế độ ăn uống cho riêng bạn
+                </p>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.target;
+
+                  const name = form.userName?.value?.trim() || "Bạn mới";
+                  const email = form.userEmail?.value?.trim() || "";
+                  const gender = form.gender?.value || "female";
+                  const age = parseInt(form.age?.value) || 20;
+                  const height = parseFloat(form.height?.value) || 160;
+                  const weight = parseFloat(form.weight?.value) || 50;
+
+                  const customMed = form.customMedical
+                    ? form.customMedical.value.trim()
+                    : "";
+                  const medical =
+                    medicalOption === "Khác" && customMed
+                      ? customMed
+                      : medicalOption;
+
+                  const bmiVal = (
+                    weight /
+                    ((height / 100) * (height / 100))
+                  ).toFixed(1);
+                  let bmrVal = 10 * weight + 6.25 * height - 5 * age;
+                  bmrVal =
+                    gender === "male"
+                      ? Math.round(bmrVal + 5)
+                      : Math.round(bmrVal - 161);
+
+                  const newProf = {
+                    name,
+                    email,
+                    gender,
+                    age,
+                    height,
+                    weight,
+                    medical,
+                    bmi: bmiVal,
+                    bmr: bmrVal,
+                    targetCalo: bmrVal + 200,
+                    waterTarget: Math.round(weight * 35),
+                  };
+
+                  localStorage.setItem(
+                    "cleanbite_profile",
+                    JSON.stringify(newProf),
+                  );
+                  setProfile(newProf);
+                  setShowOnboarding(false);
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
+                    Tên của bạn
+                  </label>
+                  <input
+                    name="userName"
+                    type="text"
+                    required
+                    placeholder="VD: Mai Lan"
+                    defaultValue={profile?.name || ""}
+                    className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-medium text-neutral-400">
+                      Email nhận thực đơn
+                    </label>
+                    <span className="text-[10px] text-neutral-500 font-normal">
+                      Không bắt buộc
+                    </span>
+                  </div>
+                  <input
+                    name="userEmail"
+                    type="email"
+                    placeholder="VD: mailan@gmail.com"
+                    defaultValue={profile?.email || ""}
+                    className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Giới tính
+                    </label>
+                    <select
+                      name="gender"
+                      defaultValue={profile?.gender || "female"}
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="female">Nữ</option>
+                      <option value="male">Nam</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Tuổi
+                    </label>
+                    <input
+                      name="age"
+                      type="number"
+                      required
+                      placeholder="20"
+                      defaultValue={profile?.age || 20}
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Chiều cao (cm)
+                    </label>
+                    <input
+                      name="height"
+                      type="number"
+                      required
+                      placeholder="152"
+                      defaultValue={profile?.height || 152}
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-400 mb-1">
+                      Cân nặng (kg)
+                    </label>
+                    <input
+                      name="weight"
+                      type="number"
+                      required
+                      placeholder="43"
+                      defaultValue={profile?.weight || 43}
+                      className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
+                    Tình trạng sức khỏe / Bệnh lý
+                  </label>
+                  <select
+                    value={medicalOption}
+                    onChange={(e) => setMedicalOption(e.target.value)}
+                    className="w-full bg-[#27272a] border border-neutral-700 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Không có">
+                      Khỏe mạnh (Không có bệnh lý)
+                    </option>
+                    <option value="Đau dạ dày">
+                      Đau dạ dày / Trào ngược dạ dày
+                    </option>
+                    <option value="Tiểu đường">
+                      Tiểu đường / Kháng Insulin
+                    </option>
+                    <option value="Huyết áp">Huyết áp cao / Tim mạch</option>
+                    <option value="Gout">Gout / Axit uric cao</option>
+                    <option value="Khác">Bệnh lý khác (Tự nhập...)</option>
+                  </select>
+
+                  {medicalOption === "Khác" && (
+                    <div className="mt-2">
+                      <input
+                        name="customMedical"
+                        type="text"
+                        placeholder="Nhập bệnh của bạn (VD: Gan nhiễm mỡ, mỡ máu, suy giáp...)"
+                        defaultValue={
+                          profile?.medical &&
+                          ![
+                            "Không có",
+                            "Đau dạ dày",
+                            "Tiểu đường",
+                            "Huyết áp",
+                            "Gout",
+                          ].includes(profile.medical)
+                            ? profile.medical
+                            : ""
+                        }
+                        className="w-full bg-[#27272a] border border-emerald-500/80 rounded-xl px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-white font-bold py-3 rounded-xl text-xs shadow-lg shadow-emerald-500/25 transition-all"
+                >
+                  Hoàn tất & Khám phá ứng dụng
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ================= THANH ĐIỀU HƯỚNG ĐÁY ================= */}
+        <nav className="fixed bottom-0 w-full max-w-[430px] bg-[#121214]/95 backdrop-blur-md border-t border-neutral-800/80 px-4 py-2.5 flex items-center justify-around z-40">
           {[
             { id: "journal", label: "Nhật ký", icon: "📝" },
-            { id: "food", label: "Thực phẩm", icon: "🍴" },
+            { id: "foods", label: "Thực phẩm", icon: "🍲" },
             { id: "ai", label: "Thực đơn AI", icon: "✨" },
             { id: "profile", label: "Cá nhân", icon: "👤" },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center flex-1 py-1 transition-all ${
+              className={`flex flex-col items-center gap-1 transition-all ${
                 activeTab === tab.id
-                  ? "text-[#10b981] font-black scale-105"
-                  : darkMode
-                    ? "text-neutral-500 hover:text-neutral-300 font-medium"
-                    : "text-neutral-400 hover:text-neutral-600 font-medium"
+                  ? "text-emerald-400 scale-105"
+                  : "text-neutral-500 hover:text-neutral-300"
               }`}
             >
-              <span className="text-lg">{tab.icon}</span>
-              <span className="text-[10px] mt-0.5 tracking-tight">
-                {tab.label}
-              </span>
+              <span className="text-lg leading-none">{tab.icon}</span>
+              <span className="text-[11px] font-semibold">{tab.label}</span>
             </button>
           ))}
         </nav>
