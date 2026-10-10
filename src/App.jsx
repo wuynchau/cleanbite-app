@@ -210,6 +210,7 @@ export default function App() {
   });
 
   const [waterGlasses, setWaterGlasses] = useState(3);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
 
   // 4. Modal chọn gram
   const [selectedFoodForModal, setSelectedFoodForModal] = useState(null);
@@ -415,7 +416,39 @@ NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JS
     }
     return days;
   }, [calendarViewDate, currentDate]);
+  // Hàm xử lý gửi báo cáo qua Email (Dành cho thành viên Premium)
+  const handleSendReport = () => {
+    if (!profile?.email) {
+      alert("Bạn chưa cung cấp Email! Vui lòng cập nhật lại hồ sơ.");
+      return;
+    }
 
+    // Bật hiệu ứng loading
+    setIsSendingEmail(true);
+
+    // Giả lập thời gian server tạo file PDF và gửi Mail (mất 2 giây)
+    setTimeout(() => {
+      setIsSendingEmail(false);
+
+      // Tạo nội dung tóm tắt để demo
+      const reportContent = `
+=== BÁO CÁO DINH DƯỠNG CLEANBITE ===
+Tên: ${profile.name}
+Tình trạng: ${profile.medical || "Khỏe mạnh"}
+Mục tiêu Calo: ${targetCalories} kcal/ngày
+Lượng đã nạp hôm nay: ${consumed.calories} kcal
+==================================
+      `.trim();
+
+      alert(
+        `✅ Đã gửi thành công!\n\nBáo cáo chi tiết định dạng PDF đã được gửi tới email: ${profile.email}\n\n(Lưu ý: Đây là bản Demo. Trong thực tế, hệ thống sẽ gọi API SendGrid để gửi file qua hòm thư của người dùng).`,
+      );
+
+      // Tùy chọn nâng cao: Mở sẵn app gửi mail của điện thoại/máy tính với nội dung điền sẵn
+      const mailtoLink = `mailto:${profile.email}?subject=Báo Cáo Dinh Dưỡng CleanBite - ${new Date().toLocaleDateString()}&body=${encodeURIComponent(reportContent + "\n\nXin chào, đây là báo cáo sinh trắc học và lịch sử ăn uống của bạn từ CleanBite.")}`;
+      window.open(mailtoLink, "_blank");
+    }, 2000);
+  };
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex justify-center selection:bg-emerald-500 selection:text-white font-sans">
       <div className="w-full max-w-[430px] min-h-screen bg-[#121214] border-x border-neutral-800 flex flex-col relative pb-28 shadow-2xl">
@@ -1137,6 +1170,26 @@ NHIỆM VỤ: Trả về JSON thực đơn. BẮT BUỘC chỉ xuất chuỗi JS
                   </div>
                 </div>
               </div>
+              {/* CHỈ HIỂN THỊ NÚT GỬI EMAIL NẾU ĐÃ MUA PREMIUM VÀ CÓ EMAIL */}
+              {isPremium && profile?.email && (
+                <button
+                  onClick={handleSendReport}
+                  disabled={isSendingEmail}
+                  className="w-full mt-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-70 text-white font-bold py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all active:scale-[0.98]"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      Đang kết xuất PDF & Gửi Mail...
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-base">📧</span> Xuất Báo Cáo & Gửi
+                      đến Email
+                    </>
+                  )}
+                </button>
+              )}
 
               {/* THẺ BMI */}
               <div className="bg-[#18181b] border border-neutral-800 rounded-3xl p-5 shadow-lg">
