@@ -360,93 +360,222 @@ export default function App() {
   };
 
   const handleApplyAiMenu = async () => {
+    if (isAiLoading) return;
+
     setIsAiLoading(true);
     setAiSuccessAlert(false);
     setGeneratedAiMenu(null);
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    const promptText = `Tạo thực đơn JSON. Mục tiêu: ${targetCalories} kcal. Bệnh lý: ${profile?.medical}. Yêu cầu: ${aiCustomNote}. Format JSON: {"breakfast":[{"name":"Món","weight":200,"calories":300,"protein":15,"carbs":35,"fat":5}],"lunch":[],"dinner":[],"snack":[]}`;
 
     try {
-      if (!apiKey) throw new Error("Chưa cấu hình API KEY");
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${apiKey}`,
+      const apiKey = String(import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+      if (!apiKey) {
+        throw new Error(
+          "Thiếu VITE_GEMINI_API_KEY. Hãy thêm API key trong Environment Variables của Vercel và triển khai lại.",
+        );
+      }
+
+      const foodOptions = (Array.isArray(foodDatabase) ? foodDatabase : [])
+        .slice(0, 100)
+        .map((food) => ({
+          name: food.name,
+          category: food.category,
+          calories: Number(food.calories) || 0,
+          protein: Number(food.protein) || 0,
+          carbs: Number(food.carbs) || 0,
+          fat: Number(food.fat) || 0,
+        }));
+
+      const promptText = [
+        "Bạn là trợ lý dinh dưỡng. Hãy tạo thực đơn một ngày bằng tiếng Việt.",
+        "Mục tiêu năng lượng: " + targetCalories + " kcal.",
+        "Mục tiêu protein: " + targetProtein + " g; carbohydrate: " + targetCarbs + " g; chất béo: " + targetFat + " g.",
+        "Tình trạng sức khỏe đã khai báo: " + String(profile?.medical || "Chưa cung cấp") + ".",
+        "Tuổi: " + (Number(profile?.age) || 20) + "; giới tính: " + String(profile?.gender || "Chưa cung cấp") + ".",
+        "Yêu cầu bổ sung: " + String(aiCustomNote || "Không có") + ".",
+        "Danh sách thực phẩm tham khảo: " + JSON.stringify(foodOptions),
+        "Chỉ trả về JSON hợp lệ, không dùng Markdown hay lời giải thích.",
+        'Cấu trúc bắt buộc: {"breakfast":[{"name":"Tên món","weight":150,"calories":250,"protein":12,"carbs":30,"fat":8}],"lunch":[],"dinner":[],"snack":[]}.',
+        "Mỗi món cần name là chuỗi; weight, calories, protein, carbs, fat là số không âm. Hãy tạo món phù hợp và tổng năng lượng gần mục tiêu ngày.",
+      ].join("\n");
+
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
+          encodeURIComponent(apiKey),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
             generationConfig: {
-              temperature: 0.7,
+              temperature: 0.4,
               responseMimeType: "application/json",
             },
           }),
         },
       );
-      if (!res.ok) throw new Error("Máy chủ bận");
-      const data = await res.json();
-      const parsed = JSON.parse(
-        data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}",
-      );
-      const process = (arr) =>
-        (arr || []).map((i) => ({ ...i, id: Date.now() + Math.random() }));
-      setGeneratedAiMenu({
-        breakfast: process(parsed?.breakfast),
-        lunch: process(parsed?.lunch),
-        dinner: process(parsed?.dinner),
-        snack: process(parsed?.snack),
-      });
-    } catch (e) {
-      alert("Lỗi tạo thực đơn. Hãy thử lại!");
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          data?.error?.message ||
+            "Gemini API trả về HTTP " + response.status + ". Hãy kiểm tra API key, quyền truy cập model và hạn mức sử dụng.",
+        );
+      }
+
+      if (data?.promptFeedback?.blockReason) {
+        throw new Error("Yêu cầu bị Gemini chặn: " + data.promptFeedback.blockReason);
+      }
+
+      const rawText = data?.candidates?.[0]?.content?.parts
+        ?.map((part) => part?.text || "")
+        .join("")
+        .trim();
+
+      if (!rawText) {
+        const reason = data?.candidates?.[0]?.finishReason;
+        throw new Error(
+          "Gemini không trả nội dung thực đơn" + (reason ? " (" + reason + ")" : "") + ". Hãy thử lại.",
+        );
+      }
+
+      const cleanedText = rawText
+        .replace(new RegExp("^" + String.fromCharCode(96).repeat(3) + "(?:json)?\\s*", "i"), "")
+        .replace(new RegExp("\\s*" + String.fromCharCode(96).repeat(3) + "$"), "");
+
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanedText);
+      } catch {
+        throw new Error("Gemini trả về JSON không hợp lệ. Hãy thử tạo thực đơn lại.");
+      }
+
+      const process = (items, mealIndex) => {
+        if (!Array.isArray(items)) return [];
+        return items
+          .filter((item) => String(item?.name || "").trim())
+          .map((item, itemIndex) => ({
+            id: String(Date.now()) + "-" + mealIndex + "-" + itemIndex + "-" + Math.random(),
+            name: String(item.name).trim(),
+            weight: Math.max(0, Number(item.weight) || 0),
+            calories: Math.max(0, Number(item.calories) || 0),
+            protein: Math.max(0, Number(item.protein) || 0),
+            carbs: Math.max(0, Number(item.carbs) || 0),
+            fat: Math.max(0, Number(item.fat) || 0),
+          }));
+      };
+
+      const nextMenu = {
+        breakfast: process(parsed?.breakfast, 0),
+        lunch: process(parsed?.lunch, 1),
+        dinner: process(parsed?.dinner, 2),
+        snack: process(parsed?.snack, 3),
+      };
+
+      if (!Object.values(nextMenu).some((items) => items.length > 0)) {
+        throw new Error("Thực đơn AI không có món ăn hợp lệ. Hãy thử tạo lại.");
+      }
+
+      setGeneratedAiMenu(nextMenu);
+    } catch (error) {
+      console.error("CleanBite - lỗi tạo thực đơn AI:", error);
+      alert("Không tạo được thực đơn AI.\n\n" + (error?.message || "Vui lòng thử lại."));
     } finally {
       setIsAiLoading(false);
     }
   };
 
   const handleSendReport = () => {
-    if (!profile?.email)
-      return alert("Vui lòng cập nhật Email trong hồ sơ để nhận báo cáo.");
+    if (isSendingEmail) return;
+
+    const recipient = String(profile?.email || "").trim();
+    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      alert("Vui lòng cập nhật địa chỉ email hợp lệ trong hồ sơ để nhận báo cáo.");
+      return;
+    }
+
     setIsSendingEmail(true);
-    setTimeout(() => {
-      setIsSendingEmail(false);
+    try {
+      const mealNames = {
+        breakfast: "Bữa sáng",
+        lunch: "Bữa trưa",
+        dinner: "Bữa tối",
+        snack: "Bữa phụ",
+      };
+
       const mealDetails = Object.entries(meals)
         .map(([key, items]) => {
-          const mealName =
-            key === "breakfast"
-              ? "Bữa Sáng"
-              : key === "lunch"
-                ? "Bữa Trưa"
-                : key === "dinner"
-                  ? "Bữa Tối"
-                  : "Bữa Phụ";
-          if (!items || items.length === 0)
-            return `- ${mealName}: (Chưa có dữ liệu ăn uống)`;
+          const mealName = mealNames[key] || key;
+          if (!Array.isArray(items) || items.length === 0) {
+            return "- " + mealName + ": Chưa có dữ liệu ăn uống";
+          }
+
           const foodList = items
-            .map((i) => `${i.name} (${i.weight}g)`)
+            .map((item) => {
+              const name = String(item?.name || "Món ăn");
+              const grams = Number(item?.weight) || 0;
+              const calories = Number(item?.calories) || 0;
+              return name + " (" + grams + " g, " + calories + " kcal)";
+            })
             .join(", ");
-          const calo = items.reduce((s, i) => s + i.calories, 0);
-          return `- ${mealName} [Tổng: ${calo} kcal]: ${foodList}`;
+
+          const mealCalories = items.reduce(
+            (sum, item) => sum + (Number(item?.calories) || 0),
+            0,
+          );
+          return "- " + mealName + " [Tổng: " + mealCalories + " kcal]: " + foodList;
         })
         .join("\n");
 
-      let evaluation = "";
-      if (consumed.calories > targetCalories + 200)
-        evaluation = "⚠️ Cảnh báo: Lượng Calo nạp vào đang VƯỢT QUÁ mục tiêu.";
-      else if (consumed.calories < targetCalories * 0.6)
-        evaluation = "⚠️ Cảnh báo: Bạn đang ăn QUÁ ÍT so với mức BMR.";
-      else
-        evaluation =
-          "✅ Tuyệt vời: Bạn đang duy trì lượng Calo và Dinh dưỡng ở mức lý tưởng!";
+      let evaluation;
+      if (consumed.calories > targetCalories + 200) {
+        evaluation = "Lượng calo nạp vào vượt mục tiêu ngày hơn 200 kcal.";
+      } else if (consumed.calories < targetCalories * 0.6) {
+        evaluation = "Lượng calo nạp vào thấp hơn 60% mục tiêu ngày.";
+      } else {
+        evaluation = "Lượng calo nạp vào đang nằm trong khoảng mục tiêu ngày.";
+      }
 
-      const reportContent = `BÁO CÁO DINH DƯỠNG TRỌN GÓI - CLEANBITE\nNgày trích xuất: ${new Date().toLocaleDateString("vi-VN")}\n\n1. KHÁCH HÀNG\n- Họ và tên: ${profile.name}\n- Chỉ số: Cao ${profile.height}cm | Nặng ${profile.weight}kg | BMI: ${profile.bmi}\n- Bệnh lý: ${profile.medical || "Khỏe mạnh"}\n\n2. TỔNG QUAN\n- Calo: ${consumed.calories} / ${targetCalories} kcal\n- Đạm: ${consumed.protein}g | Carbs: ${consumed.carbs}g | Béo: ${consumed.fat}g\n\n3. CHI TIẾT THỰC ĐƠN\n${mealDetails}\n\n4. KẾT LUẬN TỪ HỆ THỐNG\n${evaluation}`;
+      const reportContent = [
+        "BÁO CÁO DINH DƯỠNG CLEANBITE",
+        "Ngày trích xuất: " + new Date().toLocaleDateString("vi-VN"),
+        "",
+        "1. THÔNG TIN CÁ NHÂN",
+        "Họ tên: " + String(profile?.name || "Chưa cập nhật"),
+        "Chiều cao: " + (Number(profile?.height) || 0) + " cm",
+        "Cân nặng: " + (Number(profile?.weight) || 0) + " kg",
+        "BMI: " + String(profile?.bmi ?? "Chưa có dữ liệu"),
+        "Tình trạng sức khỏe khai báo: " + String(profile?.medical || "Chưa khai báo"),
+        "",
+        "2. TỔNG QUAN DINH DƯỠNG",
+        "Calo: " + consumed.calories + " / " + targetCalories + " kcal",
+        "Protein: " + consumed.protein + " g",
+        "Carbohydrate: " + consumed.carbs + " g",
+        "Chất béo: " + consumed.fat + " g",
+        "",
+        "3. CHI TIẾT BỮA ĂN",
+        mealDetails,
+        "",
+        "4. TỔNG KẾT",
+        evaluation,
+        "",
+        "Báo cáo được tổng hợp từ dữ liệu người dùng nhập vào CleanBite và chỉ mang tính tham khảo.",
+      ].join("\n");
 
-      alert(
-        `✅ Trích xuất báo cáo thành công!\n\nHệ thống sẽ tự động mở ứng dụng Email trên máy của bạn.`,
-      );
-      window.open(
-        `mailto:${profile.email}?subject=${encodeURIComponent(`Báo Cáo Dinh Dưỡng CleanBite - ${profile.name}`)}&body=${encodeURIComponent(reportContent)}`,
-        "_blank",
-      );
-    }, 2500);
+      const subject = "Báo cáo dinh dưỡng CleanBite - " + String(profile?.name || "Người dùng");
+      const mailtoUrl =
+        "mailto:" + recipient +
+        "?subject=" + encodeURIComponent(subject) +
+        "&body=" + encodeURIComponent(reportContent);
+
+      // Mở ngay bản nháp từ thao tác bấm, không dùng setTimeout hoặc lưu lịch sử báo cáo.
+      window.location.href = mailtoUrl;
+      alert("Đã chuẩn bị bản nháp email. Hãy kiểm tra ứng dụng email và nhấn Gửi để hoàn tất.");
+    } catch (error) {
+      console.error("CleanBite - không mở được bản nháp email:", error);
+      alert("Không mở được ứng dụng email. Hãy kiểm tra ứng dụng email mặc định trên thiết bị.");
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
 
   const handleUpdateMacro = (carbs, protein, fat) => {
