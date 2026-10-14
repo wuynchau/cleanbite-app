@@ -45,12 +45,12 @@ export default async function handler(req, res) {
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const anonKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const resendKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.RESEND_FROM_EMAIL;
 
   if (!supabaseUrl || !anonKey) {
-    return json(res, 500, { success: false, error: "Thiếu cấu hình Supabase trong biến môi trường Vercel." });
+    return json(res, 500, { success: false, error: "Thiếu SUPABASE_URL (hoặc VITE_SUPABASE_URL) và SUPABASE_PUBLISHABLE_KEY/SUPABASE_ANON_KEY trong biến môi trường Vercel." });
   }
   if (!resendKey || !fromEmail) {
     return json(res, 500, { success: false, error: "Thiếu RESEND_API_KEY hoặc RESEND_FROM_EMAIL trong biến môi trường Vercel." });
