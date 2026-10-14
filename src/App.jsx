@@ -877,7 +877,6 @@ export default function App() {
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: promptText }] }],
             generationConfig: {
-              temperature: 0.35,
               maxOutputTokens: 8192,
               responseMimeType: "application/json",
             },
