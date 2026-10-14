@@ -809,6 +809,7 @@ export default function App() {
   };
 
   // Tạo thực đơn AI qua API máy chủ. Không sử dụng GEMINI API key trong trình duyệt.
+  // Gọi Gemini trực tiếp từ frontend và hiển thị kết quả ở màn hình Thực đơn AI.
   const handleApplyAiMenu = async () => {
     if (isAiLoading) return;
     setIsAiLoading(true);
@@ -816,76 +817,149 @@ export default function App() {
     setGeneratedAiMenu(null);
 
     try {
-      const {
-        data: { session: activeSession },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-
-      if (sessionError) throw sessionError;
-      if (!activeSession?.access_token) {
-        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
-      }
-
-      const response = await fetch("/api/generate-menu", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${activeSession.access_token}`,
-        },
-        body: JSON.stringify({
-          targetCalories,
-          targetMacros: {
-            carbs: targetCarbs,
-            protein: targetProtein,
-            fat: targetFat,
-          },
-          profile: {
-            age: Number(profile?.age) || 20,
-            gender: profile?.gender || "female",
-            height: Number(profile?.height) || 160,
-            weight: Number(profile?.weight) || 50,
-            medical: String(profile?.medical || "Không có"),
-            bmi: profile?.bmi || "",
-            bmr: Number(profile?.bmr) || 0,
-            tdee: Number(profile?.tdee) || 0,
-            goal: profile?.goal || "maintain",
-            activityLevel: Number(profile?.activityLevel) || 1.2,
-            foodRestrictions: String(profile?.foodRestrictions || ""),
-          },
-          userRequirements: aiCustomNote,
-          foods: foodDatabase.map((food) => ({
-            name: food.name,
-            category: food.category,
-            calories: food.calories,
-            protein: food.protein,
-            carbs: food.carbs,
-            fat: food.fat,
-          })),
-        }),
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result?.success !== true || !result?.mealPlan) {
+      const apiKey = String(import.meta.env.VITE_GEMINI_API_KEY || "").trim();
+      if (!apiKey) {
         throw new Error(
-          result?.error || `Không tạo được thực đơn (HTTP ${response.status}).`,
+          "Thiếu VITE_GEMINI_API_KEY. Hãy thêm biến này vào .env.local khi chạy thử hoặc Environment Variables trên Vercel.",
         );
       }
 
-      const makeDisplayItems = (items, mealIndex) =>
-        (Array.isArray(items) ? items : []).map((item, itemIndex) => ({
-          ...item,
-          id: `${Date.now()}-${mealIndex}-${itemIndex}-${Math.random()}`,
+      // Gemini 3.5 Flash hiện đã được thay thế tự động bằng 3.6 Flash.
+      const model = String(
+        import.meta.env.VITE_GEMINI_MODEL || "gemini-3.6-flash",
+      ).trim();
+
+      const foodOptions = (Array.isArray(foodDatabase) ? foodDatabase : [])
+        .slice(0, 120)
+        .map((food) => ({
+          name: String(food.name || ""),
+          category: String(food.category || ""),
+          calories: Number(food.calories) || 0,
+          protein: Number(food.protein) || 0,
+          carbs: Number(food.carbs) || 0,
+          fat: Number(food.fat) || 0,
         }));
 
-      setGeneratedAiMenu({
-        breakfast: makeDisplayItems(result.mealPlan.breakfast, 0),
-        lunch: makeDisplayItems(result.mealPlan.lunch, 1),
-        dinner: makeDisplayItems(result.mealPlan.dinner, 2),
-        snack: makeDisplayItems(result.mealPlan.snack, 3),
-      });
+      const promptText = [
+        "Bạn là trợ lý gợi ý thực đơn dinh dưỡng bằng tiếng Việt.",
+        "Tạo thực đơn cho một ngày gồm bữa sáng, bữa trưa, bữa tối và bữa phụ.",
+        "Mục tiêu năng lượng: " + targetCalories + " kcal/ngày.",
+        "Mục tiêu protein: " + targetProtein + " g; carbohydrate: " + targetCarbs + " g; chất béo: " + targetFat + " g.",
+        "Hồ sơ người dùng: " + JSON.stringify({
+          age: Number(profile?.age) || 20,
+          gender: String(profile?.gender || "Chưa cung cấp"),
+          height: Number(profile?.height) || 0,
+          weight: Number(profile?.weight) || 0,
+          medical: String(profile?.medical || "Chưa cung cấp"),
+          bmi: profile?.bmi || "",
+          bmr: Number(profile?.bmr) || 0,
+          goal: String(profile?.goal || "maintain"),
+          activityLevel: Number(profile?.activityLevel) || 1.2,
+          foodRestrictions: String(profile?.foodRestrictions || ""),
+        }),
+        "Yêu cầu bổ sung của người dùng: " + String(aiCustomNote || "Không có"),
+        "Ưu tiên các món trong danh sách thực phẩm tham khảo. Dinh dưỡng của từng món phải ứng với khối lượng được đề xuất.",
+        "Không đưa ra chẩn đoán hay lời khuyên điều trị. Nếu có bệnh lý hoặc yêu cầu kiêng ăn, hãy thận trọng và nêu gợi ý phù hợp.",
+        "Danh sách thực phẩm tham khảo: " + JSON.stringify(foodOptions),
+        "Chỉ trả về JSON hợp lệ, không có Markdown hoặc lời giải thích bên ngoài JSON.",
+        'Cấu trúc: {"breakfast":[{"name":"Tên món","weight":150,"calories":250,"protein":12,"carbs":30,"fat":8}],"lunch":[],"dinner":[],"snack":[]}.',
+        "Mỗi món phải có name là chuỗi và weight, calories, protein, carbs, fat là số không âm.",
+      ].join("\n");
+
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/" +
+          encodeURIComponent(model) +
+          ":generateContent?key=" +
+          encodeURIComponent(apiKey),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: promptText }] }],
+            generationConfig: {
+              temperature: 0.35,
+              maxOutputTokens: 8192,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          data?.error?.message ||
+            "Gemini API trả về HTTP " + response.status +
+              ". Hãy kiểm tra API key, model và hạn mức sử dụng.",
+        );
+      }
+
+      if (data?.promptFeedback?.blockReason) {
+        throw new Error(
+          "Gemini đã chặn yêu cầu: " + data.promptFeedback.blockReason,
+        );
+      }
+
+      const rawText = data?.candidates?.[0]?.content?.parts
+        ?.map((part) => part?.text || "")
+        .join("")
+        .trim();
+
+      if (!rawText) {
+        const reason = data?.candidates?.[0]?.finishReason;
+        throw new Error(
+          "Gemini không trả nội dung thực đơn" +
+            (reason ? " (" + reason + ")" : "") +
+            ". Vui lòng thử lại.",
+        );
+      }
+
+      const fenceStart = new RegExp("^" + String.fromCharCode(96).repeat(3) + "(?:json)?\\s*", "i");
+      const fenceEnd = new RegExp("\\s*" + String.fromCharCode(96).repeat(3) + "$");
+      const cleanedText = rawText.replace(fenceStart, "").replace(fenceEnd, "").trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanedText);
+      } catch {
+        throw new Error("Gemini trả về dữ liệu không đúng định dạng JSON. Vui lòng thử lại.");
+      }
+
+      const processItems = (items, mealIndex) => {
+        if (!Array.isArray(items)) return [];
+        return items
+          .filter((item) => String(item?.name || "").trim())
+          .map((item, itemIndex) => ({
+            id: String(Date.now()) + "-" + mealIndex + "-" + itemIndex,
+            name: String(item.name).trim(),
+            weight: Math.max(0, Number(item.weight) || 0),
+            calories: Math.max(0, Number(item.calories) || 0),
+            protein: Math.max(0, Number(item.protein) || 0),
+            carbs: Math.max(0, Number(item.carbs) || 0),
+            fat: Math.max(0, Number(item.fat) || 0),
+          }));
+      };
+
+      const nextMenu = {
+        breakfast: processItems(parsed?.breakfast, 0),
+        lunch: processItems(parsed?.lunch, 1),
+        dinner: processItems(parsed?.dinner, 2),
+        snack: processItems(parsed?.snack, 3),
+      };
+
+      if (!Object.values(nextMenu).some((items) => items.length > 0)) {
+        throw new Error("Gemini chưa tạo được món ăn hợp lệ. Vui lòng thử lại.");
+      }
+
+      // Giữ kết quả ở state để giao diện hiển thị; người dùng có thể xem trước rồi áp dụng.
+      setGeneratedAiMenu(nextMenu);
+      setAiSuccessAlert(true);
     } catch (error) {
-      console.error("Lỗi tạo thực đơn AI:", error);
-      alert(error.message || "Không tạo được thực đơn. Vui lòng thử lại.");
+      console.error("Lỗi tạo thực đơn Gemini:", error);
+      alert(
+        "Không tạo được thực đơn AI.\n\n" +
+          (error?.message || "Vui lòng thử lại."),
+      );
     } finally {
       setIsAiLoading(false);
     }
