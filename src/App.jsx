@@ -1,5 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import * as FoodsModule from "./FoodsData";
+import html2pdf from "html2pdf.js";
+import { supabase } from "./src/supabaseClient";
+import Auth from "./src/Auth";
 
 const FALLBACK_FOODS = [
   {
@@ -85,6 +88,136 @@ const FALLBACK_FOODS = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState("");
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!isMounted) return;
+
+      if (error) {
+        console.error("Lỗi kiểm tra phiên đăng nhập:", error);
+      }
+
+      setSession(data?.session ?? null);
+      setAuthLoading(false);
+    };
+
+    loadSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProfile = async () => {
+      if (!session?.user?.id) {
+        setProfileLoaded(false);
+        return;
+      }
+
+      setProfileLoaded(false);
+      setProfileLoadError("");
+
+      try {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        if (data) {
+          const loadedProfile = {
+            name: data.name || session.user.user_metadata?.name || "",
+            email: session.user.email || "",
+            gender: data.gender || "female",
+            age: data.age ?? 20,
+            height: Number(data.height) || 160,
+            weight: Number(data.weight) || 50,
+            medical:
+              typeof data.medical === "string" ? data.medical : "Đau dạ dày",
+            bmi: data.bmi ?? "",
+            bmr: data.bmr ?? 0,
+            targetCalo: data.target_calo ?? 1235,
+            waterTarget: data.water_target ?? 2000,
+            macroSplit: data.macro_split || {
+              carbs: 50,
+              protein: 25,
+              fat: 25,
+            },
+          };
+
+          setProfile(loadedProfile);
+          setMedicalOption(loadedProfile.medical);
+          setTempWaterTarget(loadedProfile.waterTarget);
+
+          localStorage.setItem(
+            "cleanbite_profile",
+            JSON.stringify(loadedProfile),
+          );
+
+          setShowOnboarding(false);
+        } else {
+          // Tài khoản mới chưa có hồ sơ trong database.
+          const freshProfile = {
+            name: session.user.user_metadata?.name || "",
+            email: session.user.email || "",
+            gender: "female",
+            age: 20,
+            height: 160,
+            weight: 50,
+            medical: "Đau dạ dày",
+            macroSplit: {
+              carbs: 50,
+              protein: 25,
+              fat: 25,
+            },
+          };
+
+          localStorage.removeItem("cleanbite_profile");
+          setProfile(freshProfile);
+          setMedicalOption("Đau dạ dày");
+          setTempWaterTarget(2000);
+          setShowOnboarding(true);
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Lỗi tải hồ sơ Supabase:", error);
+        setProfileLoadError(error.message || "Không tải được hồ sơ.");
+      } finally {
+        if (!cancelled) setProfileLoaded(true);
+      }
+    };
+
+    loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]);
+
   const foodDatabase = useMemo(() => {
     return (
       FoodsModule.VIETNAMESE_FOODS ||
@@ -138,7 +271,7 @@ export default function App() {
     circleTrack: isDarkMode ? "#27272a" : "#e2e8f0",
     overlay: isDarkMode ? "bg-black/85" : "bg-slate-900/40",
     iconBg: isDarkMode ? "bg-[#27272a]" : "bg-slate-100",
-    headerBg: "bg-[#10b981]",
+    headerBg: "bg-gradient-to-b from-[#0f5132] via-[#146c43] to-[#10b981]",
     borderApp: isDarkMode ? "border-neutral-800" : "border-slate-300",
   };
 
@@ -159,6 +292,13 @@ export default function App() {
   );
 
   const [activeTab, setActiveTab] = useState("journal");
+
+  // Declare admin state before effects that reference it in dependency arrays.
+  const [adminData, setAdminData] = useState(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const [adminReloadKey, setAdminReloadKey] = useState(0);
+  const isAdmin = session?.user?.app_metadata?.role === "admin";
   const [isPremium, setIsPremium] = useState(() => {
     try {
       return localStorage.getItem("cleanbite_is_premium") === "true";
@@ -175,57 +315,174 @@ export default function App() {
   const [showWaterModal, setShowWaterModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [macroSaving, setMacroSaving] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [calendarViewDate, setCalendarViewDate] = useState(new Date());
 
   const [meals, setMeals] = useState({
-    breakfast: [
-      {
-        id: 101,
-        name: "Yến mạch",
-        weight: 60,
-        calories: 237,
-        protein: 10,
-        carbs: 40,
-        fat: 4,
-      },
-      {
-        id: 102,
-        name: "Trứng gà",
-        weight: 55,
-        calories: 79,
-        protein: 7,
-        carbs: 0,
-        fat: 5,
-      },
-    ],
-    lunch: [
-      {
-        id: 103,
-        name: "Gạo lứt",
-        weight: 150,
-        calories: 180,
-        protein: 4,
-        carbs: 38,
-        fat: 1,
-      },
-      {
-        id: 104,
-        name: "Ức gà",
-        weight: 120,
-        calories: 128,
-        protein: 27,
-        carbs: 0,
-        fat: 2,
-      },
-    ],
+    breakfast: [],
+    lunch: [],
     dinner: [],
     snack: [],
   });
 
-  const [waterGlasses, setWaterGlasses] = useState(3);
+  const [waterGlasses, setWaterGlasses] = useState(0);
+  const [waterSaving, setWaterSaving] = useState(false);
+  const [waterTargetSaving, setWaterTargetSaving] = useState(false);
+  const [dailyLogId, setDailyLogId] = useState(null);
+  const [journalLoading, setJournalLoading] = useState(false);
+  const [journalError, setJournalError] = useState("");
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      setDailyLogId(null);
+      setJournalLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadJournal = async () => {
+      setJournalLoading(true);
+      setJournalError("");
+
+      const dateKey = [
+        currentDate.getFullYear(),
+        String(currentDate.getMonth() + 1).padStart(2, "0"),
+        String(currentDate.getDate()).padStart(2, "0"),
+      ].join("-");
+
+      setMeals({
+        breakfast: [],
+        lunch: [],
+        dinner: [],
+        snack: [],
+      });
+      setWaterGlasses(0);
+      setDailyLogId(null);
+
+      try {
+        // 1. Tìm hoặc tạo nhật ký cho ngày đang chọn.
+        const { data: log, error: logError } = await supabase
+          .from("daily_logs")
+          .upsert(
+            {
+              user_id: userId,
+              log_date: dateKey,
+            },
+            { onConflict: "user_id,log_date" },
+          )
+          .select("id, water_glasses")
+          .single();
+
+        if (logError) throw logError;
+        if (cancelled) return;
+
+        setDailyLogId(log.id);
+        setWaterGlasses(Number(log.water_glasses) || 0);
+
+        // 2. Lấy các món thuộc nhật ký này.
+        const { data: rows, error: mealError } = await supabase
+          .from("meal_items")
+          .select(
+            "id, meal_type, food_name, quantity, calories, protein, carbs, fat",
+          )
+          .eq("daily_log_id", log.id)
+          .order("created_at", { ascending: true });
+
+        if (mealError) throw mealError;
+        if (cancelled) return;
+
+        // 3. Chuyển dữ liệu database về cấu trúc giao diện hiện tại.
+        const groupedMeals = {
+          breakfast: [],
+          lunch: [],
+          dinner: [],
+          snack: [],
+        };
+
+        (rows || []).forEach((item) => {
+          if (!groupedMeals[item.meal_type]) return;
+
+          groupedMeals[item.meal_type].push({
+            id: item.id,
+            name: item.food_name,
+            weight: Number(item.quantity) || 0,
+            calories: Number(item.calories) || 0,
+            protein: Number(item.protein) || 0,
+            carbs: Number(item.carbs) || 0,
+            fat: Number(item.fat) || 0,
+          });
+        });
+
+        setMeals(groupedMeals);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Lỗi tải nhật ký:", error);
+        setJournalError(error.message || "Không tải được nhật ký ăn uống.");
+      } finally {
+        if (!cancelled) setJournalLoading(false);
+      }
+    };
+
+    loadJournal();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, currentDate]);
+
+  useEffect(() => {
+    if (activeTab !== "admin") return undefined;
+    let cancelled = false;
+
+    const loadAdminDashboard = async () => {
+      if (!isAdmin) {
+        setAdminData(null);
+        setAdminError("Tài khoản này chưa được cấp vai trò quản trị viên.");
+        return;
+      }
+
+      setAdminLoading(true);
+      setAdminError("");
+      try {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const token = sessionData?.session?.access_token;
+        if (!token)
+          throw new Error("Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.");
+
+        const response = await fetch("/api/admin-dashboard", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || result?.success !== true) {
+          throw new Error(result?.error || "Không tải được bảng quản trị.");
+        }
+        if (!cancelled) setAdminData(result.data);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Lỗi tải admin dashboard:", error);
+        setAdminError(error.message || "Không tải được dữ liệu quản trị.");
+      } finally {
+        if (!cancelled) setAdminLoading(false);
+      }
+    };
+
+    loadAdminDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isAdmin, session?.user?.id, adminReloadKey]);
+
   const [tempWaterTarget, setTempWaterTarget] = useState(
     profile?.waterTarget || 2000,
   );
@@ -233,6 +490,7 @@ export default function App() {
   const [selectedFoodForModal, setSelectedFoodForModal] = useState(null);
   const [modalGrams, setModalGrams] = useState(100);
   const [modalMealType, setModalMealType] = useState("breakfast");
+  const [isAddingFood, setIsAddingFood] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Tất cả");
@@ -243,9 +501,11 @@ export default function App() {
     calories: 250,
     mealType: "breakfast",
   });
+  const [isSavingCustomFood, setIsSavingCustomFood] = useState(false);
 
   const [aiCustomNote, setAiCustomNote] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isSavingAiMenu, setIsSavingAiMenu] = useState(false);
   const [generatedAiMenu, setGeneratedAiMenu] = useState(null);
   const [aiSuccessAlert, setAiSuccessAlert] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -300,10 +560,25 @@ export default function App() {
     });
   }, [foodDatabase, searchQuery, selectedCategory]);
 
+  const isFutureLocalDate = (date) => {
+    const candidate = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return candidate > today;
+  };
+
   const changeDay = (offset) => {
-    const n = new Date(currentDate);
-    n.setDate(n.getDate() + offset);
-    setCurrentDate(n);
+    const nextDate = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth(),
+      currentDate.getDate() + offset,
+    );
+    if (isFutureLocalDate(nextDate)) return;
+    setCurrentDate(nextDate);
   };
   const formatDateDisplay = (date) => {
     if (date.toDateString() === new Date().toDateString())
@@ -325,43 +600,217 @@ export default function App() {
         date: thisDate,
         isSelected: thisDate.toDateString() === currentDate.toDateString(),
         isToday: thisDate.toDateString() === new Date().toDateString(),
+        isFuture: isFutureLocalDate(thisDate),
       });
     }
     return days;
   }, [calendarViewDate, currentDate]);
 
   // ================= 4. HÀM XỬ LÝ =================
-  const handleConfirmAddFood = () => {
-    if (!selectedFoodForModal) return;
+
+  const handleConfirmAddFood = async () => {
+    if (!selectedFoodForModal || isAddingFood) return;
+
+    if (!dailyLogId || journalLoading) {
+      alert("Nhật ký đang tải. Bạn vui lòng thử lại sau.");
+      return;
+    }
+
+    setIsAddingFood(true);
     const ratio = modalGrams / 100;
-    const newItem = {
-      id: Date.now(),
-      name: selectedFoodForModal.name,
-      weight: modalGrams,
+    const foodToSave = {
+      daily_log_id: dailyLogId,
+      meal_type: modalMealType,
+      food_name: selectedFoodForModal.name,
+      quantity: modalGrams,
       calories: Math.round(selectedFoodForModal.calories * ratio),
       protein: Math.round(selectedFoodForModal.protein * ratio),
       carbs: Math.round(selectedFoodForModal.carbs * ratio),
       fat: Math.round(selectedFoodForModal.fat * ratio),
     };
-    setMeals((p) => ({
-      ...p,
-      [modalMealType]: [...(p[modalMealType] || []), newItem],
-    }));
-    setSelectedFoodForModal(null);
-    setModalGrams(100);
-    setActiveTab("journal");
+
+    try {
+      const { data, error } = await supabase
+        .from("meal_items")
+        .insert(foodToSave)
+        .select(
+          "id, meal_type, food_name, quantity, calories, protein, carbs, fat",
+        )
+        .single();
+
+      if (error) throw error;
+      if (!data?.id) throw new Error("Không nhận được bản ghi vừa lưu.");
+
+      const newItem = {
+        id: data.id,
+        name: data.food_name,
+        weight: Number(data.quantity) || 0,
+        calories: Number(data.calories) || 0,
+        protein: Number(data.protein) || 0,
+        carbs: Number(data.carbs) || 0,
+        fat: Number(data.fat) || 0,
+      };
+
+      setMeals((prev) => ({
+        ...prev,
+        [data.meal_type]: [...(prev[data.meal_type] || []), newItem],
+      }));
+
+      setSelectedFoodForModal(null);
+      setModalGrams(100);
+      setActiveTab("journal");
+    } catch (error) {
+      console.error("Lỗi lưu món ăn:", error);
+      alert(`Không lưu được món ăn: ${error.message || "Vui lòng thử lại."}`);
+    } finally {
+      setIsAddingFood(false);
+    }
   };
 
-  const handleRemoveFood = (mealType, itemId) => {
+  const handleRemoveFood = async (mealType, itemId) => {
+    if (!itemId) return;
+
+    if (!dailyLogId) {
+      alert("Nhật ký chưa tải xong. Vui lòng thử lại.");
+      return;
+    }
+
+    const itemIdString = String(itemId);
+
+    // ID do Supabase tạo thường là UUID.
+    const isDatabaseId =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        itemIdString,
+      );
+
+    // Nếu món đã lưu trong Supabase, xóa ở database trước.
+    if (isDatabaseId) {
+      const { data: deletedRows, error } = await supabase
+        .from("meal_items")
+        .delete()
+        .eq("id", itemIdString)
+        .eq("daily_log_id", dailyLogId)
+        .select("id");
+
+      if (error) {
+        console.error("Lỗi xóa món ăn:", error);
+        alert(`Không thể xóa món ăn: ${error.message || "Vui lòng thử lại."}`);
+        return;
+      }
+      if (!deletedRows?.length) {
+        alert(
+          "Không tìm thấy món ăn trong nhật ký này hoặc bạn không có quyền xóa.",
+        );
+        return;
+      }
+    } else {
+      // Xử lý dữ liệu mẫu cũ chưa có ID từ database.
+      console.warn("Món ăn chưa có ID Supabase:", itemIdString);
+    }
+
+    // Chỉ cập nhật giao diện sau khi xóa thành công
+    // hoặc xác định đây là dữ liệu mẫu chưa lưu.
     setMeals((prev) => ({
       ...prev,
-      [mealType]: prev[mealType].filter((item) => item.id !== itemId),
+      [mealType]: (prev[mealType] || []).filter(
+        (item) => String(item.id) !== itemIdString,
+      ),
     }));
   };
 
+  // Lưu món ăn do người dùng tự nhập vào Supabase trước khi cập nhật giao diện.
+  const handleAddCustomFood = async () => {
+    if (isSavingCustomFood) return;
+
+    const foodName = String(customFoodForm.name || "").trim();
+    const quantity = Number(customFoodForm.weight);
+    const calories = Number(customFoodForm.calories);
+    const allowedMealTypes = ["breakfast", "lunch", "dinner", "snack"];
+
+    if (!foodName) {
+      alert("Vui lòng nhập tên món ăn!");
+      return;
+    }
+
+    if (!dailyLogId || journalLoading) {
+      alert("Nhật ký chưa tải xong. Vui lòng thử lại sau.");
+      return;
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      alert("Khối lượng món ăn phải lớn hơn 0 gram.");
+      return;
+    }
+
+    if (!Number.isFinite(calories) || calories < 0) {
+      alert("Lượng calo phải là số không âm.");
+      return;
+    }
+
+    if (!allowedMealTypes.includes(customFoodForm.mealType)) {
+      alert("Vui lòng chọn bữa ăn hợp lệ.");
+      return;
+    }
+
+    setIsSavingCustomFood(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("meal_items")
+        .insert({
+          daily_log_id: dailyLogId,
+          meal_type: customFoodForm.mealType,
+          food_name: foodName,
+          quantity,
+          calories,
+          // Biểu mẫu hiện chưa có trường nhập các chất này.
+          protein: 0,
+          carbs: 0,
+          fat: 0,
+        })
+        .select(
+          "id, meal_type, food_name, quantity, calories, protein, carbs, fat",
+        )
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error("Không nhận được dữ liệu món ăn vừa lưu.");
+
+      const savedItem = {
+        id: data.id,
+        name: data.food_name,
+        weight: Number(data.quantity) || 0,
+        calories: Number(data.calories) || 0,
+        protein: Number(data.protein) || 0,
+        carbs: Number(data.carbs) || 0,
+        fat: Number(data.fat) || 0,
+      };
+
+      // Dùng loại bữa trả về từ database để giữ giao diện và dữ liệu đồng bộ.
+      setMeals((prev) => ({
+        ...prev,
+        [data.meal_type]: [...(prev[data.meal_type] || []), savedItem],
+      }));
+
+      setShowCustomFoodModal(false);
+      setCustomFoodForm({
+        name: "",
+        weight: 100,
+        calories: 250,
+        mealType: "breakfast",
+      });
+      setActiveTab("journal");
+    } catch (error) {
+      console.error("Lỗi lưu món ăn tự nhập:", error);
+      alert(`Không thể lưu món ăn: ${error.message || "Vui lòng thử lại."}`);
+    } finally {
+      setIsSavingCustomFood(false);
+    }
+  };
+
+  // Gọi Gemini trực tiếp từ frontend và hiển thị kết quả ở màn hình Thực đơn AI.
   const handleApplyAiMenu = async () => {
     if (isAiLoading) return;
-
     setIsAiLoading(true);
     setAiSuccessAlert(false);
     setGeneratedAiMenu(null);
@@ -370,15 +819,20 @@ export default function App() {
       const apiKey = String(import.meta.env.VITE_GEMINI_API_KEY || "").trim();
       if (!apiKey) {
         throw new Error(
-          "Thiếu VITE_GEMINI_API_KEY. Hãy thêm API key trong Environment Variables của Vercel và triển khai lại.",
+          "Thiếu VITE_GEMINI_API_KEY. Hãy thêm biến này vào .env.local khi chạy thử hoặc Environment Variables trên Vercel.",
         );
       }
 
+      // Gemini 3.5 Flash hiện đã được thay thế tự động bằng 3.6 Flash.
+      const model = String(
+        import.meta.env.VITE_GEMINI_MODEL || "gemini-3.8-flash",
+      ).trim();
+
       const foodOptions = (Array.isArray(foodDatabase) ? foodDatabase : [])
-        .slice(0, 100)
+        .slice(0, 120)
         .map((food) => ({
-          name: food.name,
-          category: food.category,
+          name: String(food.name || ""),
+          category: String(food.category || ""),
           calories: Number(food.calories) || 0,
           protein: Number(food.protein) || 0,
           carbs: Number(food.carbs) || 0,
@@ -386,28 +840,50 @@ export default function App() {
         }));
 
       const promptText = [
-        "Bạn là trợ lý dinh dưỡng. Hãy tạo thực đơn một ngày bằng tiếng Việt.",
-        "Mục tiêu năng lượng: " + targetCalories + " kcal.",
-        "Mục tiêu protein: " + targetProtein + " g; carbohydrate: " + targetCarbs + " g; chất béo: " + targetFat + " g.",
-        "Tình trạng sức khỏe đã khai báo: " + String(profile?.medical || "Chưa cung cấp") + ".",
-        "Tuổi: " + (Number(profile?.age) || 20) + "; giới tính: " + String(profile?.gender || "Chưa cung cấp") + ".",
-        "Yêu cầu bổ sung: " + String(aiCustomNote || "Không có") + ".",
+        "Bạn là trợ lý gợi ý thực đơn dinh dưỡng bằng tiếng Việt.",
+        "Tạo thực đơn cho một ngày gồm bữa sáng, bữa trưa, bữa tối và bữa phụ.",
+        "Mục tiêu năng lượng: " + targetCalories + " kcal/ngày.",
+        "Mục tiêu protein: " +
+          targetProtein +
+          " g; carbohydrate: " +
+          targetCarbs +
+          " g; chất béo: " +
+          targetFat +
+          " g.",
+        "Hồ sơ người dùng: " +
+          JSON.stringify({
+            age: Number(profile?.age) || 20,
+            gender: String(profile?.gender || "Chưa cung cấp"),
+            height: Number(profile?.height) || 0,
+            weight: Number(profile?.weight) || 0,
+            medical: String(profile?.medical || "Chưa cung cấp"),
+            bmi: profile?.bmi || "",
+            bmr: Number(profile?.bmr) || 0,
+            goal: String(profile?.goal || "maintain"),
+            activityLevel: Number(profile?.activityLevel) || 1.2,
+            foodRestrictions: String(profile?.foodRestrictions || ""),
+          }),
+        "Yêu cầu bổ sung của người dùng: " + String(aiCustomNote || "Không có"),
+        "Ưu tiên các món trong danh sách thực phẩm tham khảo. Dinh dưỡng của từng món phải ứng với khối lượng được đề xuất.",
+        "Không đưa ra chẩn đoán hay lời khuyên điều trị. Nếu có bệnh lý hoặc yêu cầu kiêng ăn, hãy thận trọng và nêu gợi ý phù hợp.",
         "Danh sách thực phẩm tham khảo: " + JSON.stringify(foodOptions),
-        "Chỉ trả về JSON hợp lệ, không dùng Markdown hay lời giải thích.",
-        'Cấu trúc bắt buộc: {"breakfast":[{"name":"Tên món","weight":150,"calories":250,"protein":12,"carbs":30,"fat":8}],"lunch":[],"dinner":[],"snack":[]}.',
-        "Mỗi món cần name là chuỗi; weight, calories, protein, carbs, fat là số không âm. Hãy tạo món phù hợp và tổng năng lượng gần mục tiêu ngày.",
+        "Chỉ trả về JSON hợp lệ, không có Markdown hoặc lời giải thích bên ngoài JSON.",
+        'Cấu trúc: {"breakfast":[{"name":"Tên món","weight":150,"calories":250,"protein":12,"carbs":30,"fat":8}],"lunch":[],"dinner":[],"snack":[]}.',
+        "Mỗi món phải có name là chuỗi và weight, calories, protein, carbs, fat là số không âm.",
       ].join("\n");
 
       const response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" +
+        "https://generativelanguage.googleapis.com/v1beta/models/" +
+          encodeURIComponent(model) +
+          ":generateContent?key=" +
           encodeURIComponent(apiKey),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: promptText }] }],
+            contents: [{ role: "user", parts: [{ text: promptText }] }],
             generationConfig: {
-              temperature: 0.4,
+              maxOutputTokens: 8192,
               responseMimeType: "application/json",
             },
           }),
@@ -418,12 +894,16 @@ export default function App() {
       if (!response.ok) {
         throw new Error(
           data?.error?.message ||
-            "Gemini API trả về HTTP " + response.status + ". Hãy kiểm tra API key, quyền truy cập model và hạn mức sử dụng.",
+            "Gemini API trả về HTTP " +
+              response.status +
+              ". Hãy kiểm tra API key, model và hạn mức sử dụng.",
         );
       }
 
       if (data?.promptFeedback?.blockReason) {
-        throw new Error("Yêu cầu bị Gemini chặn: " + data.promptFeedback.blockReason);
+        throw new Error(
+          "Gemini đã chặn yêu cầu: " + data.promptFeedback.blockReason,
+        );
       }
 
       const rawText = data?.candidates?.[0]?.content?.parts
@@ -434,27 +914,39 @@ export default function App() {
       if (!rawText) {
         const reason = data?.candidates?.[0]?.finishReason;
         throw new Error(
-          "Gemini không trả nội dung thực đơn" + (reason ? " (" + reason + ")" : "") + ". Hãy thử lại.",
+          "Gemini không trả nội dung thực đơn" +
+            (reason ? " (" + reason + ")" : "") +
+            ". Vui lòng thử lại.",
         );
       }
 
+      const fenceStart = new RegExp(
+        "^" + String.fromCharCode(96).repeat(3) + "(?:json)?\\s*",
+        "i",
+      );
+      const fenceEnd = new RegExp(
+        "\\s*" + String.fromCharCode(96).repeat(3) + "$",
+      );
       const cleanedText = rawText
-        .replace(new RegExp("^" + String.fromCharCode(96).repeat(3) + "(?:json)?\\s*", "i"), "")
-        .replace(new RegExp("\\s*" + String.fromCharCode(96).repeat(3) + "$"), "");
+        .replace(fenceStart, "")
+        .replace(fenceEnd, "")
+        .trim();
 
       let parsed;
       try {
         parsed = JSON.parse(cleanedText);
       } catch {
-        throw new Error("Gemini trả về JSON không hợp lệ. Hãy thử tạo thực đơn lại.");
+        throw new Error(
+          "Gemini trả về dữ liệu không đúng định dạng JSON. Vui lòng thử lại.",
+        );
       }
 
-      const process = (items, mealIndex) => {
+      const processItems = (items, mealIndex) => {
         if (!Array.isArray(items)) return [];
         return items
           .filter((item) => String(item?.name || "").trim())
           .map((item, itemIndex) => ({
-            id: String(Date.now()) + "-" + mealIndex + "-" + itemIndex + "-" + Math.random(),
+            id: String(Date.now()) + "-" + mealIndex + "-" + itemIndex,
             name: String(item.name).trim(),
             weight: Math.max(0, Number(item.weight) || 0),
             calories: Math.max(0, Number(item.calories) || 0),
@@ -465,135 +957,653 @@ export default function App() {
       };
 
       const nextMenu = {
-        breakfast: process(parsed?.breakfast, 0),
-        lunch: process(parsed?.lunch, 1),
-        dinner: process(parsed?.dinner, 2),
-        snack: process(parsed?.snack, 3),
+        breakfast: processItems(parsed?.breakfast, 0),
+        lunch: processItems(parsed?.lunch, 1),
+        dinner: processItems(parsed?.dinner, 2),
+        snack: processItems(parsed?.snack, 3),
       };
 
       if (!Object.values(nextMenu).some((items) => items.length > 0)) {
-        throw new Error("Thực đơn AI không có món ăn hợp lệ. Hãy thử tạo lại.");
+        throw new Error(
+          "Gemini chưa tạo được món ăn hợp lệ. Vui lòng thử lại.",
+        );
       }
 
+      // Giữ kết quả ở state để giao diện hiển thị; người dùng có thể xem trước rồi áp dụng.
       setGeneratedAiMenu(nextMenu);
+      setAiSuccessAlert(true);
     } catch (error) {
-      console.error("CleanBite - lỗi tạo thực đơn AI:", error);
-      alert("Không tạo được thực đơn AI.\n\n" + (error?.message || "Vui lòng thử lại."));
+      console.error("Lỗi tạo thực đơn Gemini:", error);
+      alert(
+        "Không tạo được thực đơn AI.\n\n" +
+          (error?.message || "Vui lòng thử lại."),
+      );
     } finally {
       setIsAiLoading(false);
     }
   };
 
-  const handleSendReport = () => {
-    if (isSendingEmail) return;
+  // Lưu thực đơn AI vào Supabase và thay nhật ký hiện tại sau khi lưu thành công.
+  const handleSaveGeneratedAiMenu = async () => {
+    if (isSavingAiMenu) return;
 
-    const recipient = String(profile?.email || "").trim();
-    if (!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
-      alert("Vui lòng cập nhật địa chỉ email hợp lệ trong hồ sơ để nhận báo cáo.");
+    if (!dailyLogId || journalLoading) {
+      alert("Nhật ký chưa tải xong. Vui lòng đợi một chút rồi thử lại.");
+      return;
+    }
+
+    if (!generatedAiMenu) {
+      alert("Chưa có thực đơn AI để áp dụng.");
+      return;
+    }
+
+    const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
+    const rowsToSave = mealTypes.flatMap((mealType) => {
+      const items = Array.isArray(generatedAiMenu[mealType])
+        ? generatedAiMenu[mealType]
+        : [];
+
+      return items
+        .map((item) => {
+          const foodName = String(item?.name || "").trim();
+          const quantity = Number(item?.weight);
+          const calories = Number(item?.calories);
+          const protein = Number(item?.protein);
+          const carbs = Number(item?.carbs);
+          const fat = Number(item?.fat);
+
+          if (!foodName) return null;
+
+          return {
+            daily_log_id: dailyLogId,
+            meal_type: mealType,
+            food_name: foodName,
+            quantity:
+              Number.isFinite(quantity) && quantity > 0 ? quantity : 100,
+            calories: Number.isFinite(calories) ? Math.max(0, calories) : 0,
+            protein: Number.isFinite(protein) ? Math.max(0, protein) : 0,
+            carbs: Number.isFinite(carbs) ? Math.max(0, carbs) : 0,
+            fat: Number.isFinite(fat) ? Math.max(0, fat) : 0,
+          };
+        })
+        .filter(Boolean);
+    });
+
+    if (rowsToSave.length === 0) {
+      alert("Thực đơn AI chưa có món ăn hợp lệ để lưu.");
+      return;
+    }
+
+    setIsSavingAiMenu(true);
+    let insertedIds = [];
+    let replacementComplete = false;
+
+    try {
+      // Đọc danh sách cũ trước khi chèn để có thể xác nhận số bản ghi thực sự bị xóa.
+      const { data: oldRows, error: oldRowsError } = await supabase
+        .from("meal_items")
+        .select("id")
+        .eq("daily_log_id", dailyLogId);
+
+      if (oldRowsError) throw oldRowsError;
+      const oldIds = (oldRows || []).map((row) => row.id);
+
+      // Lưu các món mới trước để không xóa nhật ký cũ nếu insert thất bại.
+      const { data: savedRows, error: insertError } = await supabase
+        .from("meal_items")
+        .insert(rowsToSave)
+        .select(
+          "id, meal_type, food_name, quantity, calories, protein, carbs, fat",
+        );
+
+      insertedIds = (savedRows || []).map((item) => item.id);
+      if (insertError) throw insertError;
+      if (!savedRows || savedRows.length !== rowsToSave.length) {
+        throw new Error("Chưa lưu được đầy đủ các món trong thực đơn AI.");
+      }
+
+      if (oldIds.length > 0) {
+        const { data: deletedRows, error: deleteError } = await supabase
+          .from("meal_items")
+          .delete()
+          .eq("daily_log_id", dailyLogId)
+          .in("id", oldIds)
+          .select("id");
+
+        if (deleteError) throw deleteError;
+        if (!deletedRows || deletedRows.length !== oldIds.length) {
+          throw new Error(
+            "Không xóa được đầy đủ nhật ký cũ. Hãy kiểm tra quyền RLS trước khi áp dụng lại thực đơn.",
+          );
+        }
+      }
+
+      replacementComplete = true;
+      const groupedMeals = {
+        breakfast: [],
+        lunch: [],
+        dinner: [],
+        snack: [],
+      };
+
+      savedRows.forEach((item) => {
+        if (!groupedMeals[item.meal_type]) return;
+        groupedMeals[item.meal_type].push({
+          id: item.id,
+          name: item.food_name,
+          weight: Number(item.quantity) || 0,
+          calories: Number(item.calories) || 0,
+          protein: Number(item.protein) || 0,
+          carbs: Number(item.carbs) || 0,
+          fat: Number(item.fat) || 0,
+        });
+      });
+
+      setMeals(groupedMeals);
+      setGeneratedAiMenu(null);
+      setAiSuccessAlert(true);
+      setTimeout(() => {
+        setAiSuccessAlert(false);
+        setActiveTab("journal");
+      }, 1200);
+    } catch (error) {
+      // Nếu thay thế chưa hoàn tất, thử dọn các món mới để tránh bị cộng trùng.
+      if (insertedIds.length > 0 && !replacementComplete) {
+        const { error: rollbackError } = await supabase
+          .from("meal_items")
+          .delete()
+          .eq("daily_log_id", dailyLogId)
+          .in("id", insertedIds);
+        if (rollbackError) {
+          console.error("Không thể hoàn tác món AI vừa lưu:", rollbackError);
+        }
+      }
+      console.error("Lỗi lưu thực đơn AI:", error);
+      alert(
+        `Không thể lưu thực đơn AI: ${error.message || "Vui lòng thử lại."}`,
+      );
+    } finally {
+      setIsSavingAiMenu(false);
+    }
+  };
+
+  const handleSendReport = async () => {
+    const recipientEmail = String(
+      session?.user?.email || profile?.email || "",
+    ).trim();
+    if (!recipientEmail) {
+      alert("Bạn chưa có email trong hồ sơ. Vui lòng cập nhật email trước.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+      alert("Địa chỉ email chưa hợp lệ. Vui lòng kiểm tra lại hồ sơ.");
       return;
     }
 
     setIsSendingEmail(true);
+    let reportElement = null;
+
     try {
-      const mealNames = {
-        breakfast: "Bữa sáng",
-        lunch: "Bữa trưa",
-        dinner: "Bữa tối",
-        snack: "Bữa phụ",
-      };
+      const escapeHtml = (value) =>
+        String(value ?? "").replace(/[&<>"']/g, (char) => {
+          const entities = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          };
+          return entities[char];
+        });
+      const number = (value) => (Number(value) || 0).toLocaleString("vi-VN");
+      const today = new Date();
+      const reportDate = currentDate;
+      const dateKey = `${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}-${String(reportDate.getDate()).padStart(2, "0")}`;
+      const fileName = `CleanBite_BaoCao_${dateKey}.pdf`;
+      const gender = profile?.gender === "male" ? "Nam" : "Nữ";
 
-      const mealDetails = Object.entries(meals)
-        .map(([key, items]) => {
-          const mealName = mealNames[key] || key;
-          if (!Array.isArray(items) || items.length === 0) {
-            return "- " + mealName + ": Chưa có dữ liệu ăn uống";
-          }
+      const mealTypes = [
+        ["breakfast", "Bữa sáng"],
+        ["lunch", "Bữa trưa"],
+        ["dinner", "Bữa tối"],
+        ["snack", "Bữa phụ"],
+      ];
 
-          const foodList = items
-            .map((item) => {
-              const name = String(item?.name || "Món ăn");
-              const grams = Number(item?.weight) || 0;
-              const calories = Number(item?.calories) || 0;
-              return name + " (" + grams + " g, " + calories + " kcal)";
-            })
-            .join(", ");
-
-          const mealCalories = items.reduce(
-            (sum, item) => sum + (Number(item?.calories) || 0),
+      const mealSections = mealTypes
+        .map(([key, label]) => {
+          const items = Array.isArray(meals?.[key]) ? meals[key] : [];
+          const rows = items.length
+            ? items
+                .map(
+                  (item) => `
+                  <tr>
+                    <td>${escapeHtml(item.name)}</td>
+                    <td style="text-align:right">${number(item.weight)} g</td>
+                    <td style="text-align:right">${number(item.calories)} kcal</td>
+                    <td style="text-align:right">${number(item.protein)} g</td>
+                    <td style="text-align:right">${number(item.carbs)} g</td>
+                    <td style="text-align:right">${number(item.fat)} g</td>
+                  </tr>`,
+                )
+                .join("")
+            : `<tr><td colspan="6" style="color:#6b7280">Chưa ghi nhận món ăn</td></tr>`;
+          const total = items.reduce(
+            (sum, item) => sum + (Number(item.calories) || 0),
             0,
           );
-          return "- " + mealName + " [Tổng: " + mealCalories + " kcal]: " + foodList;
-        })
-        .join("\n");
 
-      let evaluation;
-      if (consumed.calories > targetCalories + 200) {
-        evaluation = "Lượng calo nạp vào vượt mục tiêu ngày hơn 200 kcal.";
-      } else if (consumed.calories < targetCalories * 0.6) {
-        evaluation = "Lượng calo nạp vào thấp hơn 60% mục tiêu ngày.";
-      } else {
-        evaluation = "Lượng calo nạp vào đang nằm trong khoảng mục tiêu ngày.";
+          return `
+          <section style="margin-top:22px;page-break-inside:avoid">
+            <h3 style="color:#047857;font-size:15px;margin:0 0 8px">${label} · ${number(total)} kcal</h3>
+            <table style="width:100%;border-collapse:collapse;font-size:10px">
+              <thead><tr style="background:#ecfdf5">
+                <th style="text-align:left">Món ăn</th><th>Khối lượng</th><th>Calo</th><th>Đạm</th><th>Carbs</th><th>Béo</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </section>`;
+        })
+        .join("");
+
+      const macros = [
+        ["Chất đạm", consumed.protein, targetProtein],
+        ["Carbohydrate", consumed.carbs, targetCarbs],
+        ["Chất béo", consumed.fat, targetFat],
+      ];
+      const macroRows = macros
+        .map(
+          ([label, actual, target]) => `
+        <tr>
+          <td>${label}</td><td style="text-align:right">${number(actual)} g</td>
+          <td style="text-align:right">${number(target)} g</td>
+        </tr>`,
+        )
+        .join("");
+
+      const caloriesDifference = targetCalories - consumed.calories;
+      const caloriesSummary =
+        caloriesDifference >= 0
+          ? `Còn ${number(caloriesDifference)} kcal so với mục tiêu ngày.`
+          : `Đã vượt mục tiêu calo ngày ${number(Math.abs(caloriesDifference))} kcal.`;
+      reportElement = document.createElement("div");
+
+      reportElement.style.cssText = `
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 794px;
+  min-height: 1123px;
+  margin: 0;
+  padding: 34px;
+  background: #ffffff;
+  color: #1f2937;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 99999;
+`;
+      reportElement.innerHTML = `
+        <div style="border-bottom:3px solid #10b981;padding-bottom:16px">
+          <div style="font-size:25px;font-weight:800;color:#047857">CleanBite</div>
+          <div style="font-size:12px;color:#6b7280">small bites · brighter lives</div>
+          <h1 style="font-size:21px;margin:18px 0 4px;color:#111827">BÁO CÁO DINH DƯỠNG</h1>
+          <div style="color:#6b7280">Ngày xuất báo cáo: ${today.toLocaleDateString("vi-VN")}</div>
+        </div>
+
+        <section style="margin-top:18px">
+          <h2 style="font-size:15px;color:#047857">1. Thông tin cá nhân</h2>
+          <table style="width:100%;border-collapse:collapse">
+            <tbody>
+              <tr><td style="padding:5px 0">Họ và tên</td><td style="padding:5px 0;font-weight:700">${escapeHtml(profile?.name || "Chưa cập nhật")}</td></tr>
+              <tr><td style="padding:5px 0">Tuổi / Giới tính</td><td style="padding:5px 0">${number(profile?.age)} / ${gender}</td></tr>
+              <tr><td style="padding:5px 0">Chiều cao / Cân nặng</td><td style="padding:5px 0">${number(profile?.height)} cm / ${number(profile?.weight)} kg</td></tr>
+              <tr><td style="padding:5px 0">BMI</td><td style="padding:5px 0">${escapeHtml(profile?.bmi ?? "Chưa có dữ liệu")}</td></tr>
+              <tr><td style="padding:5px 0">Tình trạng sức khỏe đã khai báo</td><td style="padding:5px 0">${escapeHtml(profile?.medical || "Chưa khai báo")}</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section style="margin-top:18px">
+          <h2 style="font-size:15px;color:#047857">2. Tổng quan trong ứng dụng</h2>
+          <table style="width:100%;border-collapse:separate;border-spacing:8px 0">
+            <tbody><tr>
+              <td style="width:50%;padding:12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px">
+                <div style="color:#047857">Calo đã nạp</div><div style="font-size:20px;font-weight:800">${number(consumed.calories)} kcal</div>
+              </td>
+              <td style="width:50%;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
+                <div style="color:#6b7280">Mục tiêu calo</div><div style="font-size:20px;font-weight:800">${number(targetCalories)} kcal</div>
+              </td>
+            </tr></tbody>
+          </table>
+          <p style="margin-top:8px">${caloriesSummary}</p>
+          <h3 style="font-size:13px;color:#047857;margin:14px 0 6px">Các chất dinh dưỡng</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr style="background:#f3f4f6"><th style="text-align:left">Chỉ số</th><th>Đã nạp</th><th>Mục tiêu</th></tr></thead>
+            <tbody>${macroRows}</tbody>
+          </table>
+          <p style="margin-top:12px">Nước đã ghi nhận: <strong>${number((Number(waterGlasses) || 0) * 250)} ml</strong> / ${number(targetWater)} ml</p>
+        </section>
+
+        <section style="margin-top:22px">
+          <h2 style="font-size:15px;color:#047857">3. Chi tiết nhật ký bữa ăn</h2>
+          ${mealSections}
+        </section>
+
+        <div style="border-top:1px solid #d1d5db;margin-top:28px;padding-top:12px;font-size:10px;color:#6b7280">
+          Báo cáo được tạo từ thông tin người dùng nhập vào CleanBite tại thời điểm xuất báo cáo. Các giá trị dinh dưỡng mang tính tham khảo và không thay thế chẩn đoán hoặc tư vấn y tế chuyên môn.
+        </div>`;
+
+      document.body.appendChild(reportElement);
+
+      // Chờ trình duyệt render nội dung báo cáo
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
+
+      // Tạo PDF theo luồng cũ
+      const pdfDataUri = await html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: fileName,
+          image: {
+            type: "jpeg",
+            quality: 0.96,
+          },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+          },
+          jsPDF: {
+            unit: "mm",
+            format: "a4",
+            orientation: "portrait",
+          },
+          pagebreak: {
+            mode: ["css", "legacy"],
+          },
+        })
+        .from(reportElement)
+        .outputPdf("datauristring");
+
+      const pdfBase64 = String(pdfDataUri).split(",").pop();
+
+      if (!pdfBase64 || pdfBase64.length < 100) {
+        throw new Error("Không tạo được dữ liệu PDF. Vui lòng thử lại.");
       }
 
-      const reportContent = [
-        "BÁO CÁO DINH DƯỠNG CLEANBITE",
-        "Ngày trích xuất: " + new Date().toLocaleDateString("vi-VN"),
-        "",
-        "1. THÔNG TIN CÁ NHÂN",
-        "Họ tên: " + String(profile?.name || "Chưa cập nhật"),
-        "Chiều cao: " + (Number(profile?.height) || 0) + " cm",
-        "Cân nặng: " + (Number(profile?.weight) || 0) + " kg",
-        "BMI: " + String(profile?.bmi ?? "Chưa có dữ liệu"),
-        "Tình trạng sức khỏe khai báo: " + String(profile?.medical || "Chưa khai báo"),
-        "",
-        "2. TỔNG QUAN DINH DƯỠNG",
-        "Calo: " + consumed.calories + " / " + targetCalories + " kcal",
-        "Protein: " + consumed.protein + " g",
-        "Carbohydrate: " + consumed.carbs + " g",
-        "Chất béo: " + consumed.fat + " g",
-        "",
-        "3. CHI TIẾT BỮA ĂN",
-        mealDetails,
-        "",
-        "4. TỔNG KẾT",
-        evaluation,
-        "",
-        "Báo cáo được tổng hợp từ dữ liệu người dùng nhập vào CleanBite và chỉ mang tính tham khảo.",
-      ].join("\n");
+      const {
+        data: { session: activeSession },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!activeSession?.access_token) {
+        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      }
 
-      const subject = "Báo cáo dinh dưỡng CleanBite - " + String(profile?.name || "Người dùng");
-      const mailtoUrl =
-        "mailto:" + recipient +
-        "?subject=" + encodeURIComponent(subject) +
-        "&body=" + encodeURIComponent(reportContent);
+      const response = await fetch("/api/send-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${activeSession.access_token}`,
+        },
+        body: JSON.stringify({
+          to: recipientEmail,
+          name: profile?.name || profile?.fullName || "bạn",
+          pdfBase64,
+          fileName,
+          reportData: {
+            reportDate: dateKey,
+            profile: {
+              name: profile?.name || "",
+              age: Number(profile?.age) || 0,
+              gender: String(profile?.gender || ""),
+              height: Number(profile?.height) || 0,
+              weight: Number(profile?.weight) || 0,
+              bmi: String(profile?.bmi || ""),
+              medical: String(profile?.medical || "").slice(0, 300),
+              targetCalories: Number(targetCalories) || 0,
+              targetWater: Number(targetWater) || 0,
+              macroSplit: profile?.macroSplit || {},
+            },
+            totals: {
+              calories: Number(consumed.calories) || 0,
+              protein: Number(consumed.protein) || 0,
+              carbs: Number(consumed.carbs) || 0,
+              fat: Number(consumed.fat) || 0,
+              waterMl: (Number(waterGlasses) || 0) * 250,
+            },
+            meals: Object.fromEntries(
+              ["breakfast", "lunch", "dinner", "snack"].map((mealType) => [
+                mealType,
+                (Array.isArray(meals?.[mealType]) ? meals[mealType] : [])
+                  .slice(0, 80)
+                  .map((item) => ({
+                    name: String(item.name || "").slice(0, 100),
+                    weight: Number(item.weight) || 0,
+                    calories: Number(item.calories) || 0,
+                    protein: Number(item.protein) || 0,
+                    carbs: Number(item.carbs) || 0,
+                    fat: Number(item.fat) || 0,
+                  })),
+              ]),
+            ),
+          },
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
 
-      // Mở ngay bản nháp từ thao tác bấm, không dùng setTimeout hoặc lưu lịch sử báo cáo.
-      window.location.href = mailtoUrl;
-      alert("Đã chuẩn bị bản nháp email. Hãy kiểm tra ứng dụng email và nhấn Gửi để hoàn tất.");
+      if (!response.ok || result?.success !== true) {
+        throw new Error(result?.error || "Gửi báo cáo không thành công.");
+      }
+
+      alert(
+        `Resend đã tiếp nhận yêu cầu gửi báo cáo PDF đến ${recipientEmail}.`,
+      );
     } catch (error) {
-      console.error("CleanBite - không mở được bản nháp email:", error);
-      alert("Không mở được ứng dụng email. Hãy kiểm tra ứng dụng email mặc định trên thiết bị.");
+      console.error("Send CleanBite report error:", error);
+      alert(
+        `Không thể gửi báo cáo lúc này.\n\n${error.message || "Vui lòng thử lại."}`,
+      );
     } finally {
+      if (reportElement?.parentNode)
+        reportElement.parentNode.removeChild(reportElement);
       setIsSendingEmail(false);
     }
   };
 
-  const handleUpdateMacro = (carbs, protein, fat) => {
-    const newProfile = { ...profile, macroSplit: { carbs, protein, fat } };
-    setProfile(newProfile);
-    localStorage.setItem("cleanbite_profile", JSON.stringify(newProfile));
-    setShowMacroModal(false);
+  // Lưu tỷ lệ đa lượng dinh dưỡng vào Supabase để đồng bộ giữa các thiết bị.
+  const handleUpdateMacro = async (carbs, protein, fat) => {
+    if (macroSaving) return;
+
+    if (!session?.user?.id) {
+      alert("Bạn cần đăng nhập để lưu tỷ lệ dinh dưỡng.");
+      return;
+    }
+
+    const nextMacroSplit = {
+      carbs: Number(carbs),
+      protein: Number(protein),
+      fat: Number(fat),
+    };
+    const total =
+      nextMacroSplit.carbs + nextMacroSplit.protein + nextMacroSplit.fat;
+
+    if (total !== 100) {
+      alert("Tổng tỷ lệ Carbs, Đạm và Béo phải bằng 100%.");
+      return;
+    }
+
+    setMacroSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ macro_split: nextMacroSplit })
+        .eq("id", session.user.id)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      if (!data?.id) throw new Error("Không tìm thấy hồ sơ của tài khoản này.");
+
+      const newProfile = { ...profile, macroSplit: nextMacroSplit };
+      setProfile(newProfile);
+      localStorage.setItem("cleanbite_profile", JSON.stringify(newProfile));
+      setShowMacroModal(false);
+    } catch (error) {
+      console.error("Lỗi lưu tỷ lệ dinh dưỡng:", error);
+      alert(
+        `Không thể lưu tỷ lệ dinh dưỡng: ${error.message || "Vui lòng thử lại."}`,
+      );
+    } finally {
+      setMacroSaving(false);
+    }
   };
 
-  const handleUpdateWaterTarget = () => {
-    const newProfile = { ...profile, waterTarget: tempWaterTarget };
-    setProfile(newProfile);
-    localStorage.setItem("cleanbite_profile", JSON.stringify(newProfile));
-    setWaterGlasses(0);
-    setShowWaterModal(false);
+  // Đăng xuất tài khoản mà không xóa nhật ký/hồ sơ đã lưu trên Supabase.
+  const handleLogout = async () => {
+    if (isSigningOut) return;
+
+    const confirmed = window.confirm(
+      "Bạn có chắc chắn muốn đăng xuất? Hồ sơ và nhật ký đã lưu trên tài khoản sẽ được giữ nguyên.",
+    );
+    if (!confirmed) return;
+
+    setIsSigningOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      // Xóa dữ liệu đệm cục bộ có thể thuộc tài khoản vừa đăng xuất,
+      // nhưng giữ cài đặt giao diện như chế độ sáng/tối.
+      localStorage.removeItem("cleanbite_profile");
+      localStorage.removeItem("cleanbite_is_premium");
+      setProfile(null);
+      setIsPremium(false);
+      setProfileLoadError("");
+    } catch (error) {
+      console.error("Lỗi đăng xuất CleanBite:", error);
+      alert(`Không thể đăng xuất: ${error.message || "Vui lòng thử lại."}`);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  // Lưu số ly nước đã uống vào nhật ký của đúng tài khoản và ngày hiện tại.
+  const handleUpdateWaterGlasses = async (nextValue) => {
+    if (waterSaving) return;
+
+    if (!session?.user?.id || !dailyLogId || journalLoading) {
+      alert("Nhật ký chưa tải xong. Vui lòng thử lại sau.");
+      return;
+    }
+
+    const nextWater = Math.max(
+      0,
+      Math.min(8, Math.floor(Number(nextValue) || 0)),
+    );
+    setWaterSaving(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("daily_logs")
+        .update({ water_glasses: nextWater })
+        .eq("id", dailyLogId)
+        .eq("user_id", session.user.id)
+        .select("id, water_glasses")
+        .single();
+
+      if (error) throw error;
+
+      setWaterGlasses(Number(data.water_glasses) || 0);
+    } catch (error) {
+      console.error("Lỗi lưu lượng nước:", error);
+      alert(
+        `Không thể lưu lượng nước: ${error.message || "Vui lòng thử lại."}`,
+      );
+    } finally {
+      setWaterSaving(false);
+    }
+  };
+
+  // Lưu mục tiêu nước vào hồ sơ Supabase. Đổi mục tiêu không xóa lượng nước đã ghi nhận.
+  const handleUpdateWaterTarget = async () => {
+    if (waterTargetSaving) return;
+
+    const nextWaterTarget = Number(tempWaterTarget);
+    if (
+      !Number.isFinite(nextWaterTarget) ||
+      nextWaterTarget < 1000 ||
+      nextWaterTarget > 4000
+    ) {
+      alert("Mục tiêu nước phải nằm trong khoảng 1.000–4.000 ml.");
+      return;
+    }
+
+    if (!session?.user?.id) {
+      alert("Bạn cần đăng nhập để lưu mục tiêu nước.");
+      return;
+    }
+
+    setWaterTargetSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({ water_target: nextWaterTarget })
+        .eq("id", session.user.id)
+        .select("id")
+        .single();
+
+      if (error) throw error;
+      if (!data?.id) throw new Error("Không tìm thấy hồ sơ của tài khoản này.");
+
+      const newProfile = { ...profile, waterTarget: nextWaterTarget };
+      setProfile(newProfile);
+      localStorage.setItem("cleanbite_profile", JSON.stringify(newProfile));
+      setTempWaterTarget(nextWaterTarget);
+      setShowWaterModal(false);
+    } catch (error) {
+      console.error("Lỗi lưu mục tiêu nước:", error);
+      alert(
+        `Không thể lưu mục tiêu nước: ${error.message || "Vui lòng thử lại."}`,
+      );
+    } finally {
+      setWaterTargetSaving(false);
+    }
   };
 
   // ================= 5. GIAO DIỆN (RENDER) VỚI ĐẦY ĐỦ LIGHT/DARK MODE =================
+
+  if (authLoading || (session && !profileLoaded)) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-white flex items-center justify-center">
+        Đang tải dữ liệu CleanBite...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Auth />;
+  }
+  if (profileLoadError) {
+    return (
+      <div className="min-h-screen bg-[#09090b] text-white flex flex-col items-center justify-center p-6 text-center gap-4">
+        <p>Không tải được hồ sơ: {profileLoadError}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-[#10b981] px-4 py-2 rounded-xl font-bold"
+        >
+          Thử lại
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={isDarkMode ? "dark" : ""}>
       <div
@@ -624,7 +1634,21 @@ export default function App() {
                   </div>
                   <div>
                     <div className="flex items-center font-black text-2xl tracking-tight leading-none select-none text-white drop-shadow-sm">
-                      Clean<span className="text-white/90 ml-0.5">Bite</span>
+                      Clean
+                      <span className="text-[#4ade80] ml-0.5 drop-shadow-sm flex items-center">
+                        <span>B</span>
+                        <span className="relative inline-flex items-center justify-center">
+                          <svg
+                            className="w-2.5 h-2.5 text-[#4ade80] absolute -top-1.5 left-[1px] transform rotate-[35deg]"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M20.5 3.5c-4.5 0-11 3.5-14 9.5-1.5 3-1 6 1.5 7.5 3.5 2 8-1 11-6 2.5-4 2.5-9 1.5-11z" />
+                          </svg>
+                          <span>ı</span>
+                        </span>
+                        <span>te</span>
+                      </span>
                     </div>
                     <p className="text-[11px] font-medium tracking-wide text-white/80 lowercase mt-0.5">
                       small bites . brighter lives
@@ -645,7 +1669,7 @@ export default function App() {
                     onClick={() => setActiveTab("profile")}
                     className="max-w-[125px] truncate text-xs bg-black/15 hover:bg-black/25 backdrop-blur-md px-3 py-1.5 rounded-full text-white font-semibold shadow-sm transition-all text-center active:scale-95"
                   >
-                    {isPremium ? "👑 VIP" : `👋 ${profile?.name || "Bạn mới"}`}
+                    {` ${profile?.name || session?.user?.user_metadata?.name || "Bạn mới"}${isPremium ? " 👑" : ""}`}
                   </button>
                 )}
               </div>
@@ -674,7 +1698,10 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => changeDay(1)}
-                    className="w-8 h-8 flex items-center justify-center text-white/90 hover:text-white active:scale-90 text-sm font-bold"
+                    disabled={
+                      currentDate.toDateString() === new Date().toDateString()
+                    }
+                    className="w-8 h-8 flex items-center justify-center text-white/90 hover:text-white active:scale-90 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     ❯
                   </button>
@@ -684,6 +1711,20 @@ export default function App() {
           )}
 
           <main className="flex-1 px-4 pt-4 overflow-y-auto">
+            {activeTab === "journal" && journalLoading && (
+              <p className="text-center text-xs text-emerald-500 py-2">
+                Đang tải nhật ký...
+              </p>
+            )}
+
+            {activeTab === "journal" && journalError && (
+              <div
+                role="alert"
+                className="text-sm text-red-400 bg-red-500/10 rounded-xl p-3 mb-3"
+              >
+                Không tải được nhật ký: {journalError}
+              </div>
+            )}
             {/* TAB 1: NHẬT KÝ */}
             {activeTab === "journal" && (
               <div className="space-y-4">
@@ -858,11 +1899,17 @@ export default function App() {
                         <p className={`text-xs ${theme.textMuted}`}>
                           {waterGlasses * 250}/{targetWater} ml • 250 ml mỗi ly
                         </p>
+                        {waterSaving && (
+                          <p className="text-[10px] text-blue-400 mt-1">
+                            Đang lưu lượng nước...
+                          </p>
+                        )}
                       </div>
                     </div>
                     <button
-                      onClick={() => setWaterGlasses(0)}
-                      className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${theme.iconBg} ${theme.textMuted} hover:opacity-80`}
+                      onClick={() => handleUpdateWaterGlasses(0)}
+                      disabled={waterSaving || journalLoading || !dailyLogId}
+                      className={`text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${theme.iconBg} ${theme.textMuted} hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                       ↺ Đặt lại
                     </button>
@@ -872,9 +1919,12 @@ export default function App() {
                       <button
                         key={num}
                         onClick={() =>
-                          setWaterGlasses(num === waterGlasses ? num - 1 : num)
+                          handleUpdateWaterGlasses(
+                            num === waterGlasses ? num - 1 : num,
+                          )
                         }
-                        className={`min-w-[40px] h-10 rounded-xl flex items-center justify-center font-bold text-xs transition-all shrink-0 ${num <= waterGlasses ? "bg-[#10b981] text-white shadow-md shadow-[#10b981]/30" : `${theme.iconBg} ${theme.textMuted}`}`}
+                        disabled={waterSaving || journalLoading || !dailyLogId}
+                        className={`min-w-[40px] h-10 rounded-xl flex items-center justify-center font-bold text-xs transition-all shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${num <= waterGlasses ? "bg-[#10b981] text-white shadow-md shadow-[#10b981]/30" : `${theme.iconBg} ${theme.textMuted}`}`}
                       >
                         {num}
                       </button>
@@ -1041,21 +2091,38 @@ export default function App() {
                 <div className="space-y-3">
                   {filteredFoods.map((food) => {
                     const kw = encodeURIComponent(food.name);
-                    let aff =
-                      food.category === "Món ăn"
-                        ? {
-                            url: `https://shopeefood.vn/ho-chi-minh/danh-sach-dia-diem-giao-tan-noi?q=${kw}`,
-                            label: "Giao ngay",
-                            color:
-                              "bg-orange-500 text-white shadow-md shadow-orange-500/20",
-                          }
-                        : {
-                            url: `https://shopee.vn/search?keyword=${kw}`,
-                            icon: "🛒",
-                            label: "Mua ngay",
-                            color:
-                              "bg-[#10b981] text-white shadow-md shadow-[#10b981]/20",
-                          };
+                    let aff;
+
+                    // Món ăn đã chế biến: tìm trên ShopeeFood.
+                    if (food.category === "Món ăn") {
+                      aff = {
+                        url: `https://shopeefood.vn/ho-chi-minh/danh-sach-dia-diem-giao-tan-noi?q=${kw}`,
+                        label: "Giao ngay",
+                        color:
+                          "bg-orange-500 text-white shadow-md shadow-orange-500/20",
+                      };
+                      // Thực phẩm đóng gói, tinh bột và gia vị: tìm trên Shopee.
+                    } else if (
+                      food.category === "Tinh bột" ||
+                      food.category === "Gia vị"
+                    ) {
+                      aff = {
+                        url: `https://shopee.vn/search?keyword=${kw}`,
+                        icon: "🛒",
+                        label: "Mua ngay",
+                        color:
+                          "bg-[#10b981] text-white shadow-md shadow-[#10b981]/20",
+                      };
+                      // Đạm tươi, rau củ và trái cây: tìm trên Bách Hóa Xanh.
+                    } else {
+                      aff = {
+                        url: `https://www.bachhoaxanh.com/tim-kiem?key=${kw}`,
+                        icon: "🛒",
+                        label: "Mua ngay",
+                        color:
+                          "bg-[#10b981] text-white shadow-md shadow-[#10b981]/20",
+                      };
+                    }
 
                     return (
                       <div
@@ -1256,18 +2323,13 @@ export default function App() {
                       })}
                     </div>
                     <button
-                      onClick={() => {
-                        setMeals(generatedAiMenu);
-                        setGeneratedAiMenu(null);
-                        setAiSuccessAlert(true);
-                        setTimeout(() => {
-                          setAiSuccessAlert(false);
-                          setActiveTab("journal");
-                        }, 1200);
-                      }}
-                      className="w-full bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-[#10b981]/25 transition-all"
+                      onClick={handleSaveGeneratedAiMenu}
+                      disabled={isSavingAiMenu || journalLoading}
+                      className="w-full bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl text-sm shadow-md shadow-[#10b981]/25 transition-all"
                     >
-                      ✓ Áp dụng thực đơn này
+                      {isSavingAiMenu
+                        ? "Đang lưu thực đơn..."
+                        : "✓ Áp dụng thực đơn này"}
                     </button>
                   </div>
                 )}
@@ -1316,6 +2378,25 @@ export default function App() {
             {/* TAB 4: CÁ NHÂN */}
             {activeTab === "profile" && (
               <div className="space-y-4">
+                {isAdmin && (
+                  <button
+                    onClick={() => setActiveTab("admin")}
+                    className={`w-full border rounded-3xl p-4 text-left flex items-center justify-between gap-3 ${theme.card} hover:border-violet-500 transition-colors`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">🛡️</span>
+                      <div>
+                        <div className={`text-sm font-bold ${theme.text}`}>
+                          Bảng quản trị CleanBite
+                        </div>
+                        <div className={`text-xs mt-1 ${theme.textMuted}`}>
+                          Thống kê và dữ liệu gần đây của hệ thống
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-violet-500">❯</span>
+                  </button>
+                )}
                 <div
                   onClick={() => setShowPremiumModal(true)}
                   className={`rounded-[1.75rem] p-5 cursor-pointer shadow-md relative overflow-hidden transition-all active:scale-[0.99] border ${isPremium ? "bg-gradient-to-r from-amber-500 via-[#10b981] to-teal-500 border-amber-400/40" : "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 border-white/10 hover:opacity-95"}`}
@@ -1356,8 +2437,8 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <span className="text-base">📧</span> Xuất Báo Cáo Y
-                        Khoa (PDF)
+                        <span className="text-base">📧</span> Gửi báo cáo PDF
+                        qua email
                       </>
                     )}
                   </button>
@@ -1482,6 +2563,266 @@ export default function App() {
             )}
 
             {/* TAB 5: CÀI ĐẶT (SETTINGS) THIẾT KẾ BO GÓC CHUẨN KÈM TƯƠNG TÁC THẬT */}
+
+            {/* TAB QUẢN TRỊ VIÊN */}
+            {activeTab === "admin" && (
+              <div className="space-y-4 pb-8">
+                {/* Tiêu đề và nút quay lại */}
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => setActiveTab("profile")}
+                    className={`border rounded-xl px-3 py-2 text-sm ${theme.card}`}
+                  >
+                    ← Quay lại
+                  </button>
+
+                  <h2 className="text-lg font-bold">🛡️ Quản trị CleanBite</h2>
+
+                  <button
+                    onClick={() => setAdminReloadKey((value) => value + 1)}
+                    disabled={adminLoading}
+                    className="bg-emerald-500 text-white rounded-xl px-3 py-2 text-sm font-bold disabled:opacity-50"
+                  >
+                    {adminLoading ? "..." : "↻"}
+                  </button>
+                </div>
+
+                {!isAdmin && (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+                    Tài khoản chưa được cấp quyền quản trị viên.
+                  </div>
+                )}
+
+                {isAdmin && adminLoading && (
+                  <div
+                    className={`rounded-2xl border p-5 text-center ${theme.card}`}
+                  >
+                    <div className="animate-pulse">
+                      Đang tải dữ liệu quản trị...
+                    </div>
+                  </div>
+                )}
+
+                {isAdmin && adminError && (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
+                    <p className="text-sm text-red-400">{adminError}</p>
+                    <button
+                      onClick={() => setAdminReloadKey((value) => value + 1)}
+                      className="mt-3 rounded-xl bg-red-500 px-4 py-2 text-sm font-bold text-white"
+                    >
+                      Thử tải lại
+                    </button>
+                  </div>
+                )}
+
+                {isAdmin && !adminLoading && !adminError && adminData && (
+                  <>
+                    {/* Thống kê tổng quan */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        {
+                          label: "Hồ sơ",
+                          value: adminData.stats?.users ?? 0,
+                          icon: "👥",
+                        },
+                        {
+                          label: "Nhật ký",
+                          value: adminData.stats?.dailyLogs ?? 0,
+                          icon: "📅",
+                        },
+                        {
+                          label: "Món ăn",
+                          value: adminData.stats?.mealItems ?? 0,
+                          icon: "🍱",
+                        },
+                      ].map((item) => (
+                        <div
+                          key={item.label}
+                          className={`rounded-2xl border p-3 ${theme.card}`}
+                        >
+                          <div className="text-xl">{item.icon}</div>
+                          <div className="mt-2 text-2xl font-black text-emerald-500">
+                            {item.value}
+                          </div>
+                          <div className={`text-xs ${theme.textMuted}`}>
+                            {item.label}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Danh sách hồ sơ */}
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-bold">👤 Người dùng</h3>
+                        <span className={`text-xs ${theme.textMuted}`}>
+                          Tối đa 100 hồ sơ gần đây
+                        </span>
+                      </div>
+
+                      {(adminData.profiles || []).length === 0 ? (
+                        <div
+                          className={`rounded-2xl border p-4 text-sm ${theme.card}`}
+                        >
+                          Chưa có hồ sơ người dùng.
+                        </div>
+                      ) : (
+                        (adminData.profiles || []).map((user) => (
+                          <div
+                            key={user.id}
+                            className={`rounded-2xl border p-4 space-y-3 ${theme.card}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-bold break-words">
+                                  {user.name || "Chưa cập nhật tên"}
+                                </div>
+                                <div
+                                  className={`mt-1 text-[10px] break-all ${theme.textMuted}`}
+                                >
+                                  ID: {user.id}
+                                </div>
+                              </div>
+                              <span className="shrink-0 rounded-lg bg-emerald-500/10 px-2 py-1 text-xs text-emerald-500">
+                                {user.gender === "male"
+                                  ? "Nam"
+                                  : user.gender === "female"
+                                    ? "Nữ"
+                                    : "Chưa rõ"}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div
+                                className={`rounded-xl p-3 ${theme.cardInner}`}
+                              >
+                                <div className={`text-xs ${theme.textMuted}`}>
+                                  Tuổi
+                                </div>
+                                <div className="mt-1 font-bold">
+                                  {user.age ?? "—"}
+                                </div>
+                              </div>
+                              <div
+                                className={`rounded-xl p-3 ${theme.cardInner}`}
+                              >
+                                <div className={`text-xs ${theme.textMuted}`}>
+                                  Chiều cao / cân nặng
+                                </div>
+                                <div className="mt-1 font-bold">
+                                  {user.height ?? "—"} cm / {user.weight ?? "—"}{" "}
+                                  kg
+                                </div>
+                              </div>
+                              <div
+                                className={`rounded-xl p-3 ${theme.cardInner}`}
+                              >
+                                <div className={`text-xs ${theme.textMuted}`}>
+                                  BMI
+                                </div>
+                                <div className="mt-1 font-bold">
+                                  {user.bmi ?? "—"}
+                                </div>
+                              </div>
+                              <div
+                                className={`rounded-xl p-3 ${theme.cardInner}`}
+                              >
+                                <div className={`text-xs ${theme.textMuted}`}>
+                                  Mục tiêu calo
+                                </div>
+                                <div className="mt-1 font-bold">
+                                  {user.target_calo ?? "—"} kcal
+                                </div>
+                              </div>
+                            </div>
+
+                            {user.medical && (
+                              <div className="text-xs">
+                                <span className={theme.textMuted}>
+                                  Tình trạng sức khỏe:{" "}
+                                </span>
+                                {user.medical}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </section>
+
+                    {/* Nhật ký ăn uống gần đây */}
+                    <section className="space-y-3">
+                      <h3 className="font-bold">📋 Nhật ký ăn uống gần đây</h3>
+
+                      {(adminData.dailyLogs || []).length === 0 ? (
+                        <div
+                          className={`rounded-2xl border p-4 text-sm ${theme.card}`}
+                        >
+                          Chưa có nhật ký ăn uống.
+                        </div>
+                      ) : (
+                        (adminData.dailyLogs || []).map((log) => (
+                          <div
+                            key={log.id}
+                            className={`rounded-2xl border p-4 ${theme.card}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-bold text-sm">
+                                  {log.user_name || "Người dùng"}
+                                </div>
+                                <div
+                                  className={`mt-1 text-xs ${theme.textMuted}`}
+                                >
+                                  {log.log_date
+                                    ? new Date(
+                                        `${log.log_date}T00:00:00`,
+                                      ).toLocaleDateString("vi-VN")
+                                    : "Chưa có ngày"}
+                                </div>
+                              </div>
+                              <div className="text-right text-xs">
+                                <div className="text-sky-500">
+                                  💧 {Number(log.water_glasses) || 0} ly
+                                </div>
+                                <div className={`mt-1 ${theme.textMuted}`}>
+                                  {(log.meal_items || []).length} món
+                                </div>
+                              </div>
+                            </div>
+
+                            {(log.meal_items || []).length > 0 && (
+                              <div
+                                className={`mt-3 pt-3 border-t space-y-2 ${theme.divider}`}
+                              >
+                                {log.meal_items.map((meal) => (
+                                  <div
+                                    key={meal.id}
+                                    className="flex items-start justify-between gap-3 text-xs"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="font-semibold break-words">
+                                        {meal.food_name}
+                                      </div>
+                                      <div className={theme.textMuted}>
+                                        {meal.meal_type} · {meal.quantity} g
+                                      </div>
+                                    </div>
+                                    <div className="shrink-0 font-bold text-emerald-500">
+                                      {meal.calories} kcal
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </section>
+                  </>
+                )}
+              </div>
+            )}
+
             {activeTab === "settings" && (
               <div className="space-y-6 pb-8 pt-2 animate-fade-in font-sans">
                 <div className="flex items-center gap-4 mb-6 px-1">
@@ -1601,19 +2942,13 @@ export default function App() {
                       </div>
                     </div>
                     <button
-                      onClick={() => {
-                        if (
-                          confirm(
-                            "Bạn có chắc chắn muốn đăng xuất và xóa toàn bộ dữ liệu?",
-                          )
-                        ) {
-                          localStorage.clear();
-                          window.location.reload();
-                        }
-                      }}
-                      className={`w-full p-4 sm:p-5 text-left text-[13px] text-red-500 font-bold flex justify-between items-center transition-colors ${isDarkMode ? "hover:bg-red-950/20" : "hover:bg-red-50"}`}
+                      onClick={handleLogout}
+                      disabled={isSigningOut}
+                      className={`w-full p-4 sm:p-5 text-left text-[13px] text-red-500 font-bold flex justify-between items-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isDarkMode ? "hover:bg-red-950/20" : "hover:bg-red-50"}`}
                     >
-                      <span>Đăng xuất & Xóa dữ liệu</span>
+                      <span>
+                        {isSigningOut ? "Đang đăng xuất..." : "Đăng xuất"}
+                      </span>
                       <span className="text-xl">⏻</span>
                     </button>
                   </div>
@@ -1673,6 +3008,7 @@ export default function App() {
                 </p>
                 <div className="space-y-3 mb-6">
                   <button
+                    disabled={macroSaving}
                     onClick={() => handleUpdateMacro(50, 25, 25)}
                     className={`w-full p-4 border rounded-2xl text-left transition-colors ${macroSplit.carbs === 50 ? "border-[#10b981] bg-[#10b981]/10" : theme.cardInner}`}
                   >
@@ -1686,6 +3022,7 @@ export default function App() {
                     </p>
                   </button>
                   <button
+                    disabled={macroSaving}
                     onClick={() => handleUpdateMacro(40, 35, 25)}
                     className={`w-full p-4 border rounded-2xl text-left transition-colors ${macroSplit.carbs === 40 ? "border-[#10b981] bg-[#10b981]/10" : theme.cardInner}`}
                   >
@@ -1699,6 +3036,7 @@ export default function App() {
                     </p>
                   </button>
                   <button
+                    disabled={macroSaving}
                     onClick={() => handleUpdateMacro(20, 40, 40)}
                     className={`w-full p-4 border rounded-2xl text-left transition-colors ${macroSplit.carbs === 20 ? "border-[#10b981] bg-[#10b981]/10" : theme.cardInner}`}
                   >
@@ -1759,9 +3097,10 @@ export default function App() {
                   </button>
                   <button
                     onClick={handleUpdateWaterTarget}
-                    className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 active:scale-95 transition-transform"
+                    disabled={waterTargetSaving}
+                    className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-xl shadow-md shadow-blue-500/20 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Lưu
+                    {waterTargetSaving ? "Đang lưu..." : "Lưu"}
                   </button>
                 </div>
               </div>
@@ -1852,8 +3191,11 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <button
                     onClick={() => {
-                      const prevM = new Date(calendarViewDate);
-                      prevM.setMonth(prevM.getMonth() - 1);
+                      const prevM = new Date(
+                        calendarViewDate.getFullYear(),
+                        calendarViewDate.getMonth() - 1,
+                        1,
+                      );
                       setCalendarViewDate(prevM);
                     }}
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${theme.iconBg} ${theme.textMuted}`}
@@ -1866,11 +3208,25 @@ export default function App() {
                   </span>
                   <button
                     onClick={() => {
-                      const nextM = new Date(calendarViewDate);
-                      nextM.setMonth(nextM.getMonth() + 1);
-                      setCalendarViewDate(nextM);
+                      const nextM = new Date(
+                        calendarViewDate.getFullYear(),
+                        calendarViewDate.getMonth() + 1,
+                        1,
+                      );
+                      const today = new Date();
+                      const currentMonth = new Date(
+                        today.getFullYear(),
+                        today.getMonth(),
+                        1,
+                      );
+                      if (nextM <= currentMonth) setCalendarViewDate(nextM);
                     }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${theme.iconBg} ${theme.textMuted}`}
+                    disabled={
+                      calendarViewDate.getFullYear() ===
+                        new Date().getFullYear() &&
+                      calendarViewDate.getMonth() >= new Date().getMonth()
+                    }
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${theme.iconBg} ${theme.textMuted} disabled:opacity-30 disabled:cursor-not-allowed`}
                   >
                     ❯
                   </button>
@@ -1892,11 +3248,13 @@ export default function App() {
                     return (
                       <button
                         key={idx}
+                        disabled={item.isFuture}
                         onClick={() => {
+                          if (item.isFuture) return;
                           setCurrentDate(item.date);
                           setShowCalendarModal(false);
                         }}
-                        className={`h-8 rounded-xl flex items-center justify-center font-semibold transition-all ${item.isSelected ? "bg-[#10b981] text-white font-bold shadow-md shadow-[#10b981]/40 scale-105" : item.isToday ? "border border-[#10b981] text-[#10b981] bg-[#10b981]/10" : `hover:opacity-70 ${theme.text}`}`}
+                        className={`h-8 rounded-xl flex items-center justify-center font-semibold transition-all ${item.isFuture ? "opacity-25 cursor-not-allowed" : item.isSelected ? "bg-[#10b981] text-white font-bold shadow-md shadow-[#10b981]/40 scale-105" : item.isToday ? "border border-[#10b981] text-[#10b981] bg-[#10b981]/10" : `hover:opacity-70 ${theme.text}`}`}
                       >
                         {item.day}
                       </button>
@@ -2024,9 +3382,12 @@ export default function App() {
                 </div>
                 <button
                   onClick={handleConfirmAddFood}
-                  className="w-full py-3.5 bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl text-xs shadow-lg shadow-[#10b981]/25 transition-all"
+                  disabled={isAddingFood || journalLoading}
+                  className="w-full py-3.5 bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] text-white font-bold rounded-2xl text-xs shadow-lg shadow-[#10b981]/25 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Xác nhận thêm vào Bữa ăn
+                  {isAddingFood
+                    ? "Đang lưu món ăn..."
+                    : "Xác nhận thêm vào Bữa ăn"}
                 </button>
               </div>
             </div>
@@ -2140,37 +3501,11 @@ export default function App() {
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    if (!customFoodForm.name)
-                      return alert("Vui lòng nhập tên món!");
-                    const newItem = {
-                      id: Date.now(),
-                      name: customFoodForm.name,
-                      weight: customFoodForm.weight,
-                      calories: customFoodForm.calories,
-                      protein: 0,
-                      carbs: 0,
-                      fat: 0,
-                    };
-                    setMeals((prev) => ({
-                      ...prev,
-                      [customFoodForm.mealType]: [
-                        ...(prev[customFoodForm.mealType] || []),
-                        newItem,
-                      ],
-                    }));
-                    setShowCustomFoodModal(false);
-                    setCustomFoodForm({
-                      name: "",
-                      weight: 100,
-                      calories: 250,
-                      mealType: "breakfast",
-                    });
-                    setActiveTab("journal");
-                  }}
-                  className="w-full mt-4 bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-xs shadow-lg shadow-[#10b981]/25 transition-all"
+                  onClick={handleAddCustomFood}
+                  disabled={isSavingCustomFood || journalLoading}
+                  className="w-full mt-4 bg-[#10b981] hover:bg-emerald-600 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-2xl text-xs shadow-lg shadow-[#10b981]/25 transition-all"
                 >
-                  Thêm ngay
+                  {isSavingCustomFood ? "Đang lưu..." : "Thêm ngay"}
                 </button>
               </div>
             </div>
@@ -2320,7 +3655,7 @@ export default function App() {
                   </p>
                 </div>
                 <form
-                  onSubmit={(e) => {
+                  onSubmit={async (e) => {
                     e.preventDefault();
                     const form = e.target;
                     const name = form.userName?.value?.trim() || "Bạn mới";
@@ -2363,12 +3698,45 @@ export default function App() {
                         fat: 25,
                       },
                     };
-                    localStorage.setItem(
-                      "cleanbite_profile",
-                      JSON.stringify(newProf),
-                    );
-                    setProfile(newProf);
-                    setShowOnboarding(false);
+
+                    try {
+                      if (!session?.user?.id) {
+                        throw new Error("Bạn chưa đăng nhập.");
+                      }
+
+                      const { error } = await supabase.from("profiles").upsert(
+                        {
+                          id: session.user.id,
+                          name: newProf.name,
+                          gender: newProf.gender,
+                          age: newProf.age,
+                          height: newProf.height,
+                          weight: newProf.weight,
+                          medical: newProf.medical,
+                          bmi: Number(newProf.bmi),
+                          bmr: newProf.bmr,
+                          target_calo: newProf.targetCalo,
+                          water_target: newProf.waterTarget,
+                          macro_split: newProf.macroSplit,
+                        },
+                        { onConflict: "id" },
+                      );
+
+                      if (error) throw error;
+
+                      localStorage.setItem(
+                        "cleanbite_profile",
+                        JSON.stringify(newProf),
+                      );
+
+                      setProfile(newProf);
+                      setShowOnboarding(false);
+                    } catch (error) {
+                      console.error("Lỗi lưu hồ sơ:", error);
+                      alert(
+                        `Chưa lưu được hồ sơ lên Supabase: ${error.message}`,
+                      );
+                    }
                   }}
                   className="space-y-3"
                 >
@@ -2383,7 +3751,11 @@ export default function App() {
                       type="text"
                       required
                       placeholder="VD: Mai Lan"
-                      defaultValue={profile?.name || ""}
+                      defaultValue={
+                        session?.user?.user_metadata?.name ||
+                        profile?.name ||
+                        ""
+                      }
                       className={`w-full border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10b981] transition-colors ${theme.input}`}
                     />
                   </div>
@@ -2402,7 +3774,9 @@ export default function App() {
                       name="userEmail"
                       type="email"
                       placeholder="VD: mailan@gmail.com"
-                      defaultValue={profile?.email || ""}
+                      defaultValue={
+                        session?.user?.email || profile?.email || ""
+                      }
                       className={`w-full border rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#10b981] transition-colors ${theme.input}`}
                     />
                   </div>
